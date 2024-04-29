@@ -566,6 +566,9 @@ def main():
 
     model = WrappedModel(model)
 
+    if use_cuda:
+        model.cuda(device_id)
+
     no_decay = ["bias", "LayerNorm.weight"]
     print("Model named parameters:", model.named_parameters())
     optimizer_grouped_parameters = [
@@ -688,6 +691,8 @@ def main():
                 loss_noise = noise_loss(lr,args.alpha)*(args.temperature/datasize)**.5
                 loss = criterion(outputs.logits, targets)+ loss_noise
             else:
+                print(f"outputs.logits device: {outputs.logits.device}")
+                print(f"targets device: {targets.device}")
                 loss = criterion(outputs.logits, targets)
 
             loss.backward()
