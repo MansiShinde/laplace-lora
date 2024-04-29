@@ -680,7 +680,7 @@ def main():
 
             optimizer.zero_grad()
             lr = adjust_learning_rate(optimizer, epoch,batch_idx)
-            outputs = model(inputs = inputs)
+            outputs = model(**inputs)
 
             if (epoch%50)+1>45:
                 loss_noise = noise_loss(lr,args.alpha)*(args.temperature/datasize)**.5
@@ -714,11 +714,13 @@ def main():
         total = 0
 
         with torch.no_grad():
-            for batch_idx, (inputs, targets) in tqdm(enumerate(eval_dataloader)):
+            for batch_idx, batch in tqdm(enumerate(eval_dataloader)):
+                inputs = batch['input_ids']
+                targets = batch['labels']
                 if use_cuda:
                     inputs, targets = inputs.cuda(device_id), targets.cuda(device_id)
             
-                outputs = model(inputs = inputs)
+                outputs = model(**inputs)
                 loss = criterion(outputs, targets)
 
                 test_loss += loss.data.item()
