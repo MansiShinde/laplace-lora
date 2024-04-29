@@ -296,6 +296,13 @@ def main():
             data_files["validation"] = args.validation_file
         extension = (args.train_file if args.train_file is not None else args.validation_file).split(".")[-1]
         raw_datasets = load_dataset(extension, data_files=data_files)
+    
+
+    datasize = len(raw_datasets)
+    num_batch = datasize/args.per_device_train_batch_size + 1
+    lr_0 = 0.5 # initial lr
+    M = 4 # number of cycles
+    T = args.num_train_epochs * num_batch
 
     if 'ARC' in args.task_name or 'openbookqa' in args.task_name:
         # Initialize counters
@@ -349,13 +356,6 @@ def main():
         raw_datasets["train"] = filtered_train
         raw_datasets["validation"] = filtered_valid
         raw_datasets["test"] = filtered_test
-
-
-        datasize = len(raw_datasets)
-        num_batch = datasize/args.per_device_train_batch_size + 1
-        lr_0 = 0.5 # initial lr
-        M = 4 # number of cycles
-        T = args.num_train_epochs * num_batch
 
         print('====counts train====')
         print(f"Total number of training examples: {len(raw_datasets['train'])}")
@@ -498,10 +498,10 @@ def main():
         # of 8s, which will enable the use of Tensor Cores on NVIDIA hardware with compute capability >= 7.5 (Volta).
         data_collator = DataCollatorWithPadding(tokenizer)
 
-    train_dataloader = DataLoader(
-        train_dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size
-    )
-    eval_dataloader = DataLoader(eval_dataset, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size)
+    train_dataloader = DataLoader(train_dataset, shuffle=True, collate_fn=data_collator, 
+                                  batch_size=args.per_device_train_batch_size)
+    eval_dataloader = DataLoader(eval_dataset, collate_fn=data_collator, 
+                                 batch_size=args.per_device_eval_batch_size)
 
     if args.testing_set != 'val':
         val_dataloader = DataLoader(val_dataset, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size)
