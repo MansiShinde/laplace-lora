@@ -91,7 +91,7 @@ def parse_args():
     parser.add_argument(
         "--per_device_train_batch_size",
         type=int,
-        default=64,
+        default=8,
         help="Batch size (per device) for the training dataloader.",
     )
     parser.add_argument(
@@ -113,7 +113,7 @@ def parse_args():
         help="Gradient clipping norm.",
     )
     parser.add_argument("--weight_decay", type=float, default=0.0, help="Weight decay to use.")
-    parser.add_argument("--num_train_epochs", type=int, default=200, help="Total number of training epochs to perform.")
+    parser.add_argument("--num_train_epochs", type=int, default=100, help="Total number of training epochs to perform.")
     parser.add_argument(
         "--max_train_steps",
         type=int,
