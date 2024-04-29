@@ -672,8 +672,9 @@ def main():
         correct = 0
         train_loss = 0
         
-        print("Trainloader:", train_dataloader)
-        for batch_idx, (inputs, inputs['labels']) in enumerate(train_dataloader):
+        for batch_idx, batch in enumerate(train_dataloader):
+            inputs = batch['input_ids']
+            targets = batch['labels']
             if use_cuda:
                 inputs, targets = inputs.cuda(device_id), targets.cuda(device_id)
 
