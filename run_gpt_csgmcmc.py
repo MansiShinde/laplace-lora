@@ -657,8 +657,6 @@ def main():
             resume_step -= starting_epoch * len(train_dataloader)
             completed_steps = resume_step // args.gradient_accumulation_step
 
-    # update the progress_bar if load from checkpoint
-    progress_bar.update(completed_steps)
 
     test_loader_list = [eval_dataloader]
     test_loader_names = ['eval']
