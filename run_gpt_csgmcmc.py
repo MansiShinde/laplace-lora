@@ -676,7 +676,9 @@ def main():
             inputs = batch['input_ids']
             targets = batch['labels']
             if use_cuda:
-                inputs, targets = inputs.cuda(device_id), targets.cuda(device_id)
+                print("inside cude condition")
+                inputs = inputs.cuda(device_id)
+                targets = targets.cuda(device_id)
 
             optimizer.zero_grad()
             lr = adjust_learning_rate(optimizer, epoch,batch_idx)
