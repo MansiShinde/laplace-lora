@@ -680,7 +680,7 @@ def main():
 
             optimizer.zero_grad()
             lr = adjust_learning_rate(optimizer, epoch,batch_idx)
-            outputs = model(**inputs)
+            outputs = model(**batch)
 
             if (epoch%50)+1>45:
                 loss_noise = noise_loss(lr,args.alpha)*(args.temperature/datasize)**.5
@@ -720,7 +720,7 @@ def main():
                 if use_cuda:
                     inputs, targets = inputs.cuda(device_id), targets.cuda(device_id)
             
-                outputs = model(**inputs)
+                outputs = model(**batch)
                 loss = criterion(outputs, targets)
 
                 test_loss += loss.data.item()
