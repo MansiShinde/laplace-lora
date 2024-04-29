@@ -559,8 +559,11 @@ def main():
             kwargs.pop('labels', None)
             output_dict = self.model(**kwargs)
             logits = output_dict['logits']
+            print(f"logits device operation: {logits.device}")
             selected_logits = logits[:, -1, self.id_list]
+            print(f"selected logits device operation: {selected_logits.device}")
             output_dict['logits'] = selected_logits
+            print(f"output_dict device operation: {output_dict.device}")
             return output_dict   
     
 
