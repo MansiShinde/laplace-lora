@@ -684,9 +684,9 @@ def main():
 
             if (epoch%50)+1>45:
                 loss_noise = noise_loss(lr,args.alpha)*(args.temperature/datasize)**.5
-                loss = criterion(outputs, targets)+ loss_noise
+                loss = criterion(outputs.logits, targets)+ loss_noise
             else:
-                loss = criterion(outputs, targets)
+                loss = criterion(outputs.logits, targets)
 
             loss.backward()
             optimizer.step()
