@@ -552,7 +552,6 @@ def main():
             selected_logits = logits[:, -1, self.id_list]
             print(f"selected logits device operation: {selected_logits.device}")
             output_dict['logits'] = selected_logits
-            print(f"output_dict device operation: {output_dict.device}")
             return output_dict   
     
 
@@ -664,12 +663,13 @@ def main():
         train_loss = 0
         
         for batch_idx, batch in enumerate(train_dataloader):
-            inputs = batch['input_ids']
-            targets = batch['labels']
+
             if use_cuda:
                 print("inside cude condition")
-                inputs = inputs.cuda(device_id)
-                targets = targets.cuda(device_id)
+                batch = batch.cuda(device_id)
+            
+            inputs = batch['input_ids']
+            targets = batch['labels']
 
             optimizer.zero_grad()
             lr = adjust_learning_rate(optimizer, epoch,batch_idx)
