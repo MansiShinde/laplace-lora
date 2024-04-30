@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 import copy
 import numpy as np
+import torch.backends.cudnn as cudnn
 
 import transformers
 from transformers import (
@@ -247,20 +248,7 @@ def main():
         set_seed(args.seed)
 
     # Handle the repository creation
-    if args.push_to_hub:
-        if args.hub_model_id is None:
-            repo_name = get_full_repo_name(Path(args.output_dir).name, token=args.hub_token)
-        else:
-            repo_name = args.hub_model_id
-        create_repo(repo_name, exist_ok=True, token=args.hub_token)
-        repo = Repository(args.output_dir, clone_from=repo_name, token=args.hub_token)
-
-        with open(os.path.join(args.output_dir, ".gitignore"), "w+") as gitignore:
-            if "step_*" not in gitignore:
-                gitignore.write("step_*\n")
-            if "epoch_*" not in gitignore:
-                gitignore.write("epoch_*\n")
-    elif args.output_dir is not None:
+    if args.output_dir is not None:
         os.makedirs(args.output_dir, exist_ok=True)
 
     # Get the datasets: you can either provide your own CSV/JSON training and evaluation files (see below)
@@ -498,6 +486,7 @@ def main():
         # of 8s, which will enable the use of Tensor Cores on NVIDIA hardware with compute capability >= 7.5 (Volta).
         data_collator = DataCollatorWithPadding(tokenizer)
 
+    print("train dataset:", train_dataset)
     train_dataloader = DataLoader(train_dataset, shuffle=True, collate_fn=data_collator, 
                                   batch_size=args.per_device_train_batch_size)
     eval_dataloader = DataLoader(eval_dataset, collate_fn=data_collator, 
@@ -571,6 +560,8 @@ def main():
 
     if use_cuda:
         model.cuda(device_id)
+        cudnn.benchmark = True 
+        cudnn.deterministic = True
 
     no_decay = ["bias", "LayerNorm.weight"]
     print("Model named parameters:", model.named_parameters())
@@ -588,12 +579,6 @@ def main():
 
     criterion = torch.nn.CrossEntropyLoss()
 
-    lr_scheduler = get_scheduler(
-        name=args.lr_scheduler_type,
-        optimizer=optimizer,
-        num_warmup_steps=args.num_warmup_steps,
-        num_training_steps=args.max_train_steps,
-    )
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
@@ -638,7 +623,6 @@ def main():
     print(f"  Total optimization steps = {args.max_train_steps}")
     # Only show the progress bar once on each machine.
     # progress_bar = tqdm(range(args.max_train_steps))
-    completed_steps = 0
     starting_epoch = 0
     # Potentially load in the weights and states from a previous save
     if args.resume_from_checkpoint:
@@ -674,6 +658,7 @@ def main():
     def train(epoch):
         print('\nEpoch: %d' % epoch)
         model.train()
+
         total = 0
         correct = 0
         train_loss = 0
