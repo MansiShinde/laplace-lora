@@ -673,6 +673,9 @@ def main():
             lr = adjust_learning_rate(optimizer, epoch,batch_idx)
             outputs = model(**batch)
 
+            print("output logits: ", outputs.logits)
+            print("targets:", targets)
+
             if (epoch%50)+1>45:
                 loss_noise = noise_loss(lr,args.alpha)*(args.temperature/datasize)**.5
                 loss = criterion(outputs.logits, targets)+ loss_noise
