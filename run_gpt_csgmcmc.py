@@ -682,7 +682,7 @@ def main():
             loss.backward()
             optimizer.step()
             
-            print("loss value:", loss)
+            print("loss value:", loss.detach().cpu().float())
 
             train_loss += loss.detach().cpu().float()
             predicted = outputs.logits.argmax(dim=-1)
