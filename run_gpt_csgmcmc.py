@@ -666,7 +666,9 @@ def main():
 
             if use_cuda:
                 print("inside cude condition")
-                batch = batch.cuda(device_id)
+                batch['input_ids'] = batch['input_ids'].to(device_id)
+                batch['attention_mask'] = batch['attention_mask'].to(device_id)
+                batch['labels'] = batch['labels'].to(device_id)
             
             inputs = batch['input_ids']
             targets = batch['labels']
