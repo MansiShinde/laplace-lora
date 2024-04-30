@@ -682,6 +682,7 @@ def main():
             loss.backward()
             optimizer.step()
             
+            print("loss value:", loss)
 
             train_loss += loss.data.item()
             predicted = outputs.logits.argmax(dim=-1)
@@ -712,7 +713,7 @@ def main():
                 targets = batch['labels']
             
                 outputs = model(**batch)
-                loss = criterion(outputs, targets)
+                loss = criterion(outputs.logits, targets)
 
                 test_loss += loss.data.item()
                 predictions = outputs.logits.argmax(dim=-1) #if not is_regression else outputs.logits.squeeze()
