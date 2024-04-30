@@ -584,7 +584,7 @@ def main():
     if overrode_max_train_steps:
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
     # Afterwards we recalculate our number of training epochs
-    args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
+    # args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
 
     
     checkpointing_steps = args.checkpointing_steps
@@ -665,12 +665,10 @@ def main():
         for batch_idx, batch in enumerate(train_dataloader):
 
             if use_cuda:
-                print("inside cude condition")
                 batch['input_ids'] = batch['input_ids'].to(device_id)
                 batch['attention_mask'] = batch['attention_mask'].to(device_id)
                 batch['labels'] = batch['labels'].to(device_id)
             
-            inputs = batch['input_ids']
             targets = batch['labels']
 
             optimizer.zero_grad()
@@ -681,8 +679,6 @@ def main():
                 loss_noise = noise_loss(lr,args.alpha)*(args.temperature/datasize)**.5
                 loss = criterion(outputs.logits, targets)+ loss_noise
             else:
-                print(f"outputs.logits device: {outputs.logits.device}")
-                print(f"targets device: {targets.device}")
                 loss = criterion(outputs.logits, targets)
 
             loss.backward()
@@ -693,29 +689,29 @@ def main():
             predicted = outputs.logits.argmax(dim=-1)
             total += targets.size(0)
             correct += predicted.eq(targets.data).cpu().sum()
-            if batch_idx%100==0:
-                print('Loss: %.3f | Acc: %.3f%% (%d/%d)'
-                    % (train_loss/(batch_idx+1), 100.*correct.item()/total, correct, total))
+
+
+        print('Training: Loss: %.3f | Acc: %.3f%% (%d/%d)'
+            % (train_loss/len(train_dataloader), 100.*correct.item()/total, correct, total))
 
 
 
     def test(epoch):
-        global best_acc
-
         model.eval()
-        output_dicts = []
-        output_dir = "step_0"
-        output_dir = os.path.join(args.output_dir, output_dir)
+        # output_dir = "csgmcmc_step_0"
+        # output_dir = os.path.join(args.output_dir, output_dir)
         test_loss = 0
         correct = 0
         total = 0
 
         with torch.no_grad():
             for batch_idx, batch in tqdm(enumerate(eval_dataloader)):
-                inputs = batch['input_ids']
-                targets = batch['labels']
                 if use_cuda:
-                    inputs, targets = inputs.cuda(device_id), targets.cuda(device_id)
+                    batch['input_ids'] = batch['input_ids'].to(device_id)
+                    batch['attention_mask'] = batch['attention_mask'].to(device_id)
+                    batch['labels'] = batch['labels'].to(device_id)
+                
+                targets = batch['labels']
             
                 outputs = model(**batch)
                 loss = criterion(outputs, targets)
@@ -726,32 +722,29 @@ def main():
 
                 correct += predictions.eq(targets.data).cpu().sum()
 
-                logits = outputs.logits.detach()
-                for j in range(logits.size(0)):
-                    probs = logits[j]  #F.softmax(logits[j], -1)
-                    label = targets
-                    output_dict = {
-                        'index': args.per_device_eval_batch_size * batch_idx + j,
-                        'true': label[j].item(),
-                        'pred': logits[j].argmax().item(),
-                        'conf': probs.max().item(),
-                        'logits': logits[j].cpu().numpy().tolist(),
-                        'probs': probs.cpu().numpy().tolist(),
-                    }
-                    output_dicts.append(output_dict)
+                # logits = outputs.logits.detach()
+                # for j in range(logits.size(0)):
+                #     probs = logits[j]  #F.softmax(logits[j], -1)
+                #     label = targets
+                #     output_dict = {
+                #         'index': args.per_device_eval_batch_size * batch_idx + j,
+                #         'true': label[j].item(),
+                #         'pred': logits[j].argmax().item(),
+                #         'conf': probs.max().item(),
+                #         'logits': logits[j].cpu().numpy().tolist(),
+                #         'probs': probs.cpu().numpy().tolist(),
+                #     }
+                #     output_dicts.append(output_dict)
 
-                metric.add_batch(
-                    predictions=predictions,
-                    references=targets,
-                )
+                # metric.add_batch(
+                #     predictions=predictions,
+                #     references=targets,
+                # )
   
-
-                if batch_idx%100==0:
-                    print('Test Loss: %.3f | Test Acc: %.3f%% (%d/%d)'
-                        % (test_loss/(batch_idx+1), 100.*correct.item()/total, correct, total))
-            
         print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
             test_loss/len(eval_dataloader), correct, total, 100. * correct.item() / total))
+        
+        return test_loss/len(eval_dataloader), 100. * correct.item() / total
 
 
         # eval_metric = metric.compute()
@@ -794,9 +787,24 @@ def main():
 
         # del output_dicts, all_results, output_dict, eval_metric, logits, probs, label, predictions, references, outputs
 
+    val_accuracy = 0
+    val_loss = 0
+    outputs_dict = []
+    output_dir = "csgmcmc_step_0"
+    output_dir = os.path.join(args.output_dir, output_dir)
     for epoch in range(starting_epoch, args.num_train_epochs):
         train(epoch)
+        val_loss, val_accuracy = test(epoch)
+        outputs_dict = {
+            "val_loss":val_loss,
+            "val_accuracy":val_accuracy
+        }
 
+    with open(output_dir, 'w+') as f:
+        for i, output_dict in enumerate(outputs_dict):
+            output_dict_str = json.dumps(output_dict)
+            f.write(f'{output_dict_str}\n')
+        
 
 if __name__ == "__main__":
     main()
