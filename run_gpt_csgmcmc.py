@@ -288,7 +288,7 @@ def main():
 
     datasize = len(raw_datasets)
     num_batch = datasize/args.per_device_train_batch_size + 1
-    lr_0 = 0.5 # initial lr
+    lr_0 = args.learning_rate # initial lr
     M = 4 # number of cycles
     T = args.num_train_epochs * num_batch
 
@@ -684,7 +684,7 @@ def main():
             
             print("loss value:", loss)
 
-            train_loss += loss.data.item()
+            train_loss += loss.detach().cpu().float()
             predicted = outputs.logits.argmax(dim=-1)
             total += targets.size(0)
             correct += predicted.eq(targets.data).cpu().sum()
@@ -715,7 +715,7 @@ def main():
                 outputs = model(**batch)
                 loss = criterion(outputs.logits, targets)
 
-                test_loss += loss.data.item()
+                test_loss += loss.detach().cpu().float()
                 predictions = outputs.logits.argmax(dim=-1) #if not is_regression else outputs.logits.squeeze()
                 total += targets.size(0)
 
