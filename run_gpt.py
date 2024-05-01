@@ -425,7 +425,7 @@ def main():
     model.print_trainable_parameters()
     print(model)
 
-    padding = "max_length" if args.pad_to_max_length else False
+    padding = args.max_length if args.pad_to_max_length else False
 
     def preprocess_function(examples):
         if args.task_name == 'boolq':
