@@ -548,6 +548,7 @@ def main():
             kwargs.pop('labels', None)
             output_dict = self.model(**kwargs)
             logits = output_dict['logits']
+            print("logits in forward:", logits)
             selected_logits = logits[:, -1, self.id_list]
             output_dict['logits'] = selected_logits
             return output_dict   
@@ -572,7 +573,7 @@ def main():
             "weight_decay": 0.0,
         },
     ]
-    optimizer = torch.optim.SGD(optimizer_grouped_parameters, lr=args.learning_rate, momentum=1-args.alpha, weight_decay=5e-4)
+    optimizer = torch.optim.SGD(optimizer_grouped_parameters, lr=args.learning_rate, momentum=1-args.alpha, weight_decay=0.0)
 
     criterion = torch.nn.CrossEntropyLoss()
 
@@ -673,8 +674,8 @@ def main():
             lr = adjust_learning_rate(optimizer, epoch,batch_idx)
             outputs = model(**batch)
 
-            print("output logits: ", outputs.logits)
-            print("targets:", targets)
+            # print("output logits: ", outputs.logits)
+            # print("targets:", targets)
 
             if (epoch%50)+1>45:
                 loss_noise = noise_loss(lr,args.alpha)*(args.temperature/datasize)**.5
@@ -685,7 +686,7 @@ def main():
             loss.backward()
             optimizer.step()
             
-            print("loss value:", loss.detach().cpu().float())
+            # print("loss value:", loss.detach().cpu().float())
 
             train_loss += loss.detach().cpu().float()
             predicted = outputs.logits.argmax(dim=-1)
