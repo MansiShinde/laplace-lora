@@ -285,116 +285,13 @@ def main():
         extension = (args.train_file if args.train_file is not None else args.validation_file).split(".")[-1]
         raw_datasets = load_dataset(extension, data_files=data_files)
     
+    print("raw datasets 1st:", raw_datasets)
 
     datasize = len(raw_datasets)
     num_batch = datasize/args.per_device_train_batch_size + 1
     lr_0 = args.learning_rate # initial lr
     M = 4 # number of cycles
     T = args.num_train_epochs * num_batch
-
-    if 'ARC' in args.task_name or 'openbookqa' in args.task_name:
-        # Initialize counters
-        count_3_choices_train = 0
-        count_5_choices_train = 0
-        count_3_choices_valid = 0
-        count_5_choices_valid = 0
-
-        # Count in the training dataset
-        for example in raw_datasets["train"]:
-            if len(example['choices']['label']) == 3:
-                count_3_choices_train += 1
-            elif len(example['choices']['label']) == 5:
-                count_5_choices_train += 1
-
-        # Count in the validation dataset
-        for example in raw_datasets["validation"]:
-            if len(example['choices']['label']) == 3:
-                count_3_choices_valid += 1
-            elif len(example['choices']['label']) == 5:
-                count_5_choices_valid += 1
-
-        # Get total counts
-        total_train = len(raw_datasets["train"])
-        total_valid = len(raw_datasets["validation"])
-
-
-
-
-        # Print counts
-        print('====counts train====')
-        print(f"Total number of training examples: {total_train}")
-        print(f"Number of training questions with 3 choices: {count_3_choices_train}")
-        print(f"Number of training questions with 5 choices: {count_5_choices_train}")
-
-        print('====counts valid====')
-        print(f"Total number of validation examples: {total_valid}")
-        print(f"Number of validation questions with 3 choices: {count_3_choices_valid}")
-        print(f"Number of validation questions with 5 choices: {count_5_choices_valid}")
-
-        # Filter the examples in the training dataset
-        filtered_train = raw_datasets["train"].filter(lambda example: len(example['choices']['label']) == 4)
-
-        # Filter the examples in the validation dataset
-        filtered_valid = raw_datasets["validation"].filter(lambda example: len(example['choices']['label']) == 4)
-
-        # Filter the examples in the test dataset
-        filtered_test = raw_datasets["test"].filter(lambda example: len(example['choices']['label']) == 4)
-
-        # Replace the original datasets with the filtered datasets
-        raw_datasets["train"] = filtered_train
-        raw_datasets["validation"] = filtered_valid
-        raw_datasets["test"] = filtered_test
-
-        print('====counts train====')
-        print(f"Total number of training examples: {len(raw_datasets['train'])}")
-        print('====counts valid====')
-        print(f"Total number of validation examples: {len(raw_datasets['validation'])}")
-
-        def convert_choices_to_alpha(example):
-            # Define a mapping from numerical to alphabetical labels
-            mapping = {'1': 'A', '2': 'B', '3': 'C', '4': 'D'}
-
-            # Convert the 'label' field in 'choices'
-            example['choices']['label'] = [mapping.get(label, label) for label in example['choices']['label']]
-
-            # Convert the 'answerKey' field
-            example['answerKey'] = mapping.get(example['answerKey'], example['answerKey'])
-
-            example['choices']['text'] = [text if text.endswith('.') else text + '.' for text in example['choices']['text']]
-            example['choices']['text'] = [text[0].upper() + text[1:] if text else text for text in example['choices']['text']]
-    
-
-            return example
-
-        # Apply the conversion to the training, validation, and test datasets
-        raw_datasets["train"] = raw_datasets["train"].map(convert_choices_to_alpha)
-        raw_datasets["validation"] = raw_datasets["validation"].map(convert_choices_to_alpha)
-        raw_datasets["test"] = raw_datasets["test"].map(convert_choices_to_alpha)
-
-        print('====train data====')
-        from collections import Counter
-
-        # Initialize counters for training and validation datasets
-        counter_train = Counter()
-        counter_valid = Counter()
-
-        # Count in the training dataset
-        for example in raw_datasets["train"]:
-            counter_train.update(example['answerKey'])
-
-        # Count in the validation dataset
-        for example in raw_datasets["validation"]:
-            counter_valid.update(example['answerKey'])
-
-        # Print the results
-        print("Training dataset counts:")
-        for choice, count in counter_train.items():
-            print(f"Choice {choice}: {count} occurrences")
-
-        print("Validation dataset counts:")
-        for choice, count in counter_valid.items():
-            print(f"Choice {choice}: {count} occurrences")
-
 
     # Load pretrained model and tokenizer
     #
@@ -455,6 +352,7 @@ def main():
         desc="Running tokenizer on dataset",
     )
 
+    print("processed dataset:", processed_datasets)
 
     # print('====train data====')
     train_dataset = processed_datasets["train"]
