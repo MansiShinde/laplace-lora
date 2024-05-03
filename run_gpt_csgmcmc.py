@@ -288,11 +288,13 @@ def main():
     
     print("raw datasets 1st:", raw_datasets)
 
+    print("length of raw datasets:", len(raw_datasets))
     datasize = len(raw_datasets)
     num_batch = datasize/args.per_device_train_batch_size + 1
     lr_0 = args.learning_rate # initial lr
     M = 4 # number of cycles
     T = args.num_train_epochs * num_batch
+    args.temperature = 1.0/datasize
 
     # Load pretrained model and tokenizer
     #
@@ -420,11 +422,11 @@ def main():
     # Split weights in two groups, one with weight decay and the other not.
     
     # Scheduler and math around the number of training steps.
-    overrode_max_train_steps = False
-    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
-    if args.max_train_steps is None:
-        args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
-        overrode_max_train_steps = True
+    # overrode_max_train_steps = False
+    # c = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
+    # if args.max_train_steps is None:
+    #     args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+    #     overrode_max_train_steps = True
 
     
     class WrappedModel(torch.nn.Module):
@@ -457,8 +459,8 @@ def main():
 
     if use_cuda:
         model.cuda(device_id)
-        cudnn.benchmark = True 
-        cudnn.deterministic = True
+        # cudnn.benchmark = True 
+        # cudnn.deterministic = True
 
     no_decay = ["bias", "LayerNorm.weight"]
     print("Model named parameters:", model.named_parameters())
@@ -478,9 +480,9 @@ def main():
 
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed
-    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
-    if overrode_max_train_steps:
-        args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+    # num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
+    # if overrode_max_train_steps:
+    #     args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
     # Afterwards we recalculate our number of training epochs
     # args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
 
@@ -491,10 +493,10 @@ def main():
 
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
-    if args.with_tracking:
-        experiment_config = vars(args)
-        # TensorBoard cannot log Enums, need the raw value
-        experiment_config["lr_scheduler_type"] = experiment_config["lr_scheduler_type"].value
+    # if args.with_tracking:
+    #     experiment_config = vars(args)
+    #     # TensorBoard cannot log Enums, need the raw value
+    #     experiment_config["lr_scheduler_type"] = experiment_config["lr_scheduler_type"].value
         
 
     # Get the metric function
@@ -517,32 +519,32 @@ def main():
     print(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
     print(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
     print(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
-    print(f"  Total optimization steps = {args.max_train_steps}")
+    # print(f"  Total optimization steps = {args.max_train_steps}")
     # Only show the progress bar once on each machine.
     # progress_bar = tqdm(range(args.max_train_steps))
     starting_epoch = 0
     # Potentially load in the weights and states from a previous save
-    if args.resume_from_checkpoint:
-        if args.resume_from_checkpoint is not None or args.resume_from_checkpoint != "":
-            path = os.path.basename(args.resume_from_checkpoint)
-        else:
-            # Get the most recent checkpoint
-            dirs = [f.name for f in os.scandir(os.getcwd()) if f.is_dir()]
-            dirs.sort(key=os.path.getctime)
-            path = dirs[-1]  # Sorts folders by date modified, most recent checkpoint is the last
-        # Extract `epoch_{i}` or `step_{i}`
-        training_difference = os.path.splitext(path)[0]
+    # if args.resume_from_checkpoint:
+    #     if args.resume_from_checkpoint is not None or args.resume_from_checkpoint != "":
+    #         path = os.path.basename(args.resume_from_checkpoint)
+    #     else:
+    #         # Get the most recent checkpoint
+    #         dirs = [f.name for f in os.scandir(os.getcwd()) if f.is_dir()]
+    #         dirs.sort(key=os.path.getctime)
+    #         path = dirs[-1]  # Sorts folders by date modified, most recent checkpoint is the last
+    #     # Extract `epoch_{i}` or `step_{i}`
+    #     training_difference = os.path.splitext(path)[0]
 
-        if "epoch" in training_difference:
-            starting_epoch = int(training_difference.replace("epoch_", "")) + 1
-            resume_step = None
-            completed_steps = starting_epoch * num_update_steps_per_epoch
-        else:
-            # need to multiply `gradient_accumulation_steps` to reflect real steps
-            resume_step = int(training_difference.replace("step_", "")) * args.gradient_accumulation_steps
-            starting_epoch = resume_step // len(train_dataloader)
-            resume_step -= starting_epoch * len(train_dataloader)
-            completed_steps = resume_step // args.gradient_accumulation_step
+    #     if "epoch" in training_difference:
+    #         starting_epoch = int(training_difference.replace("epoch_", "")) + 1
+    #         resume_step = None
+    #         completed_steps = starting_epoch * num_update_steps_per_epoch
+    #     else:
+    #         # need to multiply `gradient_accumulation_steps` to reflect real steps
+    #         resume_step = int(training_difference.replace("step_", "")) * args.gradient_accumulation_steps
+    #         starting_epoch = resume_step // len(train_dataloader)
+    #         resume_step -= starting_epoch * len(train_dataloader)
+    #         completed_steps = resume_step // args.gradient_accumulation_step
 
 
     test_loader_list = [eval_dataloader]
@@ -569,6 +571,7 @@ def main():
             
             targets = batch['labels']
 
+            torch.cuda.empty_cache()
             optimizer.zero_grad()
             lr = adjust_learning_rate(optimizer, epoch,batch_idx)
             outputs = model(**batch)
