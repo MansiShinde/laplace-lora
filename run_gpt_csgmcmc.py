@@ -19,8 +19,7 @@ from huggingface_hub import Repository, create_repo
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 import copy
-import numpy as np
-import torch.backends.cudnn as cudnn
+import numpy as np 
 
 import transformers
 from transformers import (
@@ -49,6 +48,8 @@ from peft import (
 )
 
 
+logger = get_logger(__name__)
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Finetune a transformers model on a text classification task")
@@ -75,7 +76,6 @@ def parse_args():
     )
     parser.add_argument(
         "--pad_to_max_length",
-        # default=True,
         action="store_true",
         help="If passed, pad all samples to `max_length`. Otherwise, dynamic padding is used.",
     )
@@ -184,14 +184,14 @@ def parse_args():
         default=False,
         help="Whether or not to save evaluation on training set.",
     )
-    parser.add_argument('--temperature', type=float, default=1./50000, help='temperature (default: 1/dataset_size)')
-    parser.add_argument('--alpha', type=int, default=1, help='1: SGLD')
-    parser.add_argument('--device_id',type = int, help = 'device id to use')
+    parser.add_argument('--temperature', type=float, default=1./640, help='temperature (default: 1/dataset_size)')
     parser.add_argument("--lora_r", type=int, default=8)
     parser.add_argument("--lora_alpha", type=int, default=16)
     parser.add_argument("--lora_dropout", type=float, default=0.1)
     parser.add_argument("--testing_set", type=str, default='val')
     parser.add_argument("--lm_head", action="store_true", default=False)
+    parser.add_argument('--alpha', type=int, default=1,
+                    help='1: SGLD')
     args = parser.parse_args()
 
     print(args)
@@ -224,33 +224,52 @@ def parse_args():
 
 def main():
     args = parse_args()
-
-    use_cuda = torch.cuda.is_available()
-    device_id = args.device_id
-
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.
     send_example_telemetry("run_glue_no_trainer", args)
 
+    # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
     # If we're using tracking, we also need to initialize it here and it will by default pick up all supported trackers
     # in the environment
+    accelerator = (
+        Accelerator(log_with=args.report_to, project_dir=args.output_dir) if args.with_tracking else Accelerator()
+    )
     # Make one log on every process with the configuration for debugging.
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
         level=logging.INFO,
     )
-
-    datasets.utils.logging.set_verbosity_error()
-    transformers.utils.logging.set_verbosity_error()
+    logger.info(accelerator.state, main_process_only=False)
+    if accelerator.is_local_main_process:
+        datasets.utils.logging.set_verbosity_warning()
+        transformers.utils.logging.set_verbosity_info()
+    else:
+        datasets.utils.logging.set_verbosity_error()
+        transformers.utils.logging.set_verbosity_error()
 
     # If passed along, set the training seed now.
     if args.seed is not None:
         set_seed(args.seed)
 
     # Handle the repository creation
-    if args.output_dir is not None:
-        os.makedirs(args.output_dir, exist_ok=True)
+    if accelerator.is_main_process:
+        if args.push_to_hub:
+            if args.hub_model_id is None:
+                repo_name = get_full_repo_name(Path(args.output_dir).name, token=args.hub_token)
+            else:
+                repo_name = args.hub_model_id
+            create_repo(repo_name, exist_ok=True, token=args.hub_token)
+            repo = Repository(args.output_dir, clone_from=repo_name, token=args.hub_token)
+
+            with open(os.path.join(args.output_dir, ".gitignore"), "w+") as gitignore:
+                if "step_*" not in gitignore:
+                    gitignore.write("step_*\n")
+                if "epoch_*" not in gitignore:
+                    gitignore.write("epoch_*\n")
+        elif args.output_dir is not None:
+            os.makedirs(args.output_dir, exist_ok=True)
+    accelerator.wait_for_everyone()
 
     # Get the datasets: you can either provide your own CSV/JSON training and evaluation files (see below)
     # or specify a GLUE benchmark task (the dataset will be downloaded automatically from the datasets Hub).
@@ -287,21 +306,14 @@ def main():
         raw_datasets = load_dataset(extension, data_files=data_files)
     
 
-    print("raw datasets 1st:", raw_datasets)
-
     print("length of raw datasets:", len(raw_datasets['train']))
-    datasize = len(raw_datasets['train'])
-    num_batch = datasize/args.per_device_train_batch_size + 1
-    lr_0 = args.learning_rate # initial lr
-    M = 4 # number of cycles
-    T = args.num_train_epochs * num_batch
-    args.temperature = 1.0/datasize
+
 
     # Load pretrained model and tokenizer
     #
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
     # download model & vocab.
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer, padding_side='left')
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer, padding_side='left', use_auth_token='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')
     tokenizer.pad_token = tokenizer.bos_token
     if args.task_name in ['boolq']:  #,'winogrande_m', 'winogrande_s']:
         tokenizer.add_eos_token = True
@@ -309,49 +321,17 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path, load_in_8bit=True
     )
-    
+
+
     target_modules=['v_proj','q_proj']
     if args.lm_head:
         target_modules.append('lm_head')
     peft_config = LoraConfig(task_type="CAUSAL_LM", inference_mode=False, r=8, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout, target_modules=target_modules)
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
+    print(model)
 
-    class WrappedModel(torch.nn.Module):
-        def __init__(self, model):
-            super().__init__()
-
-            if args.task_name == 'boolq':
-                self.id_list = [tokenizer.encode('False')[1], tokenizer.encode('True')[1]]
-            elif args.task_name == 'openbookqa':
-                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1], tokenizer.encode('C')[1], tokenizer.encode('D')[1]]
-            elif 'ARC' in args.task_name:
-                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1], tokenizer.encode('C')[1], tokenizer.encode('D')[1]]
-            elif 'winogrande' in args.task_name:
-                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1]]
-
-            self.model = model
-
-
-        def forward(self, **kwargs):
-            kwargs.pop('labels', None)
-            output_dict = self.model(**kwargs)
-            logits = output_dict['logits']
-            # print("logits in forward:", logits)
-            selected_logits = logits[:, -1, self.id_list]
-            output_dict['logits'] = selected_logits
-            return output_dict   
-    
-
-    model = WrappedModel(model)
-    print("Wrapped Model: ",model)
-
-    if use_cuda:
-        model.cuda(device_id)
-
-
-
-    padding = "max_length" if args.pad_to_max_length else False
+    padding = args.max_length if args.pad_to_max_length else False
 
     def preprocess_function(examples):
         if args.task_name == 'boolq':
@@ -375,19 +355,15 @@ def main():
             result = tokenizer(texts, padding=padding, max_length=args.max_length, truncation=True)
             map_dict = {"1": 0, "2": 1, "":None}
             result["labels"] = [map_dict[label] for label in examples["answer"]]
-
         return result
 
-    
-    
-    processed_datasets = raw_datasets.map(
-        preprocess_function,
-        batched=True,
-        remove_columns=raw_datasets["train"].column_names,
-        desc="Running tokenizer on dataset",
-    )
-
-    print("processed dataset:", processed_datasets)
+    with accelerator.main_process_first():
+        processed_datasets = raw_datasets.map(
+            preprocess_function,
+            batched=True,
+            remove_columns=raw_datasets["train"].column_names,
+            desc="Running tokenizer on dataset",
+        )
 
     # print('====train data====')
     train_dataset = processed_datasets["train"]
@@ -404,9 +380,9 @@ def main():
     elif args.testing_set == 'val':
         eval_dataset = processed_dataset
 
-    # Print a few random samples from the training set:
+    # Log a few random samples from the training set:
     for index in random.sample(range(len(train_dataset)), 3):
-        print(f"Sample {index} of the training set: {train_dataset[index]}.")
+        logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
 
     # DataLoaders creation:
     if args.pad_to_max_length:
@@ -417,53 +393,110 @@ def main():
         # Otherwise, `DataCollatorWithPadding` will apply dynamic padding for us (by padding to the maximum length of
         # the samples passed). When using mixed precision, we add `pad_to_multiple_of=8` to pad all tensors to multiple
         # of 8s, which will enable the use of Tensor Cores on NVIDIA hardware with compute capability >= 7.5 (Volta).
-        data_collator = DataCollatorWithPadding(tokenizer)
+        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=(8 if accelerator.use_fp16 else None))
 
-    print("train dataset:", train_dataset)
-    train_dataloader = DataLoader(train_dataset, shuffle=True, collate_fn=data_collator, 
-                                  batch_size=args.per_device_train_batch_size)
-    eval_dataloader = DataLoader(eval_dataset, collate_fn=data_collator, 
-                                 batch_size=args.per_device_eval_batch_size)
+    train_dataloader = DataLoader(
+        train_dataset, shuffle=True, collate_fn=data_collator, batch_size=args.per_device_train_batch_size
+    )
+    eval_dataloader = DataLoader(eval_dataset, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size)
 
     if args.testing_set != 'val':
         val_dataloader = DataLoader(val_dataset, collate_fn=data_collator, batch_size=args.per_device_eval_batch_size)
-
-
-    def noise_loss(lr,alpha):
-        noise_loss = 0.0
-        noise_std = (2/lr*alpha)**0.5
-        for var in model.parameters():
-            means = torch.zeros(var.size()).cuda(device_id)
-            noise_loss += torch.sum(var * torch.normal(means, std = noise_std).cuda(device_id))
-        return noise_loss
-
-
-    def adjust_learning_rate(optimizer, epoch, batch_idx):
-        rcounter = epoch * num_batch + batch_idx
-        cos_inner = np.pi * (rcounter % (T // M))
-        cos_inner /= T // M
-        cos_out = np.cos(cos_inner) + 1
-        lr = 0.5*cos_out*lr_0
-
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = lr
-        return lr
 
 
     # Optimizer
     # Split weights in two groups, one with weight decay and the other not.
     
     # Scheduler and math around the number of training steps.
-    # overrode_max_train_steps = False
-    # c = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
-    # if args.max_train_steps is None:
-    #     args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
-    #     overrode_max_train_steps = True
+    overrode_max_train_steps = False
+    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
+    if args.max_train_steps is None:
+        args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+        overrode_max_train_steps = True
 
+
+    def noise_loss(lr,alpha):
+        noise_loss = 0.0
+        noise_std = (2/lr*alpha)**0.5
+        for var in model.parameters():
+            means = torch.zeros(var.size())
+            noise_loss += torch.sum(var * torch.normal(means, std = noise_std))
+        return noise_loss
+
+
+    class ScheduledOptim():
+        '''A simple wrapper class for learning rate scheduling'''
+
+        def __init__(self, optimizer, n_warmup_steps, num_batch, T, M, lr_0):
+            self._optimizer = optimizer
+            self.n_warmup_steps = n_warmup_steps
+            self.n_steps = 0
+            self.num_batch = num_batch
+            self.T = T
+            self.M = M
+            self.lr_0 = lr_0
+
+
+        def step_and_update_lr(self, epoch):
+            "Step with the inner optimizer"
+            lr = self._update_learning_rate(epoch)
+            return lr
+            
+
+        def zero_grad(self):
+            "Zero out the gradients with the inner optimizer"
+            self._optimizer.zero_grad()
+
+
+        def _update_learning_rate(self, epoch):
+            # ''' Learning rate scheduling per step '''
+            self.n_steps += 1
+            rcounter = epoch * self.num_batch + self.n_steps
+            cos_inner = np.pi * (rcounter % (self.T // self.M))
+            cos_inner /= self.T // self.M
+            cos_out = np.cos(cos_inner) + 1
+            lr = 0.5*cos_out*self.lr_0
+
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = lr
+            return lr
+
+
+    # Prepare everything with our `accelerator`.
+    class WrappedModel(torch.nn.Module):
+        def __init__(self, model):
+            super().__init__()
+
+            if args.task_name == 'boolq':
+                self.id_list = [tokenizer.encode('False')[1], tokenizer.encode('True')[1]]
+            elif args.task_name == 'openbookqa':
+                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1], tokenizer.encode('C')[1], tokenizer.encode('D')[1]]
+            elif 'ARC' in args.task_name:
+                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1], tokenizer.encode('C')[1], tokenizer.encode('D')[1]]
+            elif 'winogrande' in args.task_name:
+                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1]]
+
+            self.model = model
+
+
+        def forward(self, **kwargs):
+            kwargs.pop('labels', None)
+            output_dict = self.model(**kwargs)
+
+            logits = output_dict['logits']
+            print("print logits in forward", logits)
+            selected_logits = logits[:, -1, self.id_list]
+            output_dict['logits'] = selected_logits
+            return output_dict   
     
 
+    model = WrappedModel(model)
+
+    datasize = len(raw_datasets['train'])
+    num_batch = datasize/args.per_device_train_batch_size + 1
+    args.temperature = 1.0/datasize
+
     no_decay = ["bias", "LayerNorm.weight"]
-    print("Model named parameters:", model.named_parameters())
     optimizer_grouped_parameters = [
         {
             "params": [p for n, p in model.named_parameters() if p.requires_grad and not any(nd in n for nd in no_decay)],
@@ -474,9 +507,41 @@ def main():
             "weight_decay": 0.0,
         },
     ]
-    optimizer = torch.optim.SGD(optimizer_grouped_parameters, lr=args.learning_rate, momentum=1-args.alpha, weight_decay=0.0)
-    criterion = torch.nn.CrossEntropyLoss()
-        
+    optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate, momentum=0.9, weight_decay=0.0)
+
+    lr_scheduler = ScheduledOptim(
+        optimizer=optimizer, 
+        n_warmup_steps =args.num_warmup_steps, 
+        num_batch = num_batch, 
+        T= args.num_train_epochs * num_batch, 
+        M=4, # number of cycles
+        lr_0=args.learning_rate
+    )
+
+
+    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
+        model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
+    )
+
+    # We need to recalculate our total training steps as the size of the training dataloader may have changed
+    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
+    if overrode_max_train_steps:
+        args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+    # Afterwards we recalculate our number of training epochs
+    # args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
+
+    # Figure out how many steps we should save the Accelerator states
+    # checkpointing_steps = args.checkpointing_steps
+    # if checkpointing_steps is not None and checkpointing_steps.isdigit():
+    #     checkpointing_steps = int(checkpointing_steps)
+
+    # We need to initialize the trackers we use, and also store our configuration.
+    # The trackers initializes automatically on the main process.
+    # if args.with_tracking:
+    #     experiment_config = vars(args)
+    #     # TensorBoard cannot log Enums, need the raw value
+    #     experiment_config["lr_scheduler_type"] = experiment_config["lr_scheduler_type"].value
+    #     accelerator.init_trackers("glue_no_trainer", experiment_config)
 
     # Get the metric function
     if args.task_name is not None:
@@ -490,142 +555,151 @@ def main():
         metric = evaluate.load("accuracy")
 
     # Train!
-    total_batch_size = args.per_device_train_batch_size
+    total_batch_size = args.per_device_train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
 
-    print("***** Running training *****")
-    print(f"  Num examples = {len(train_dataset)}")
-    print(f"  Num Epochs = {args.num_train_epochs}")
-    print(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
-    print(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
-    print(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
-    # print(f"  Total optimization steps = {args.max_train_steps}")
+    logger.info("***** Running training *****")
+    logger.info(f"  Num examples = {len(train_dataset)}")
+    logger.info(f"  Num Epochs = {args.num_train_epochs}")
+    logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
+    logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
+    logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
+    # logger.info(f"  Total optimization steps = {args.max_train_steps}")
     # Only show the progress bar once on each machine.
-    # progress_bar = tqdm(range(args.max_train_steps))
+    # progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
+    completed_steps = 0
     starting_epoch = 0
+    # Potentially load in the weights and states from a previous save
+    # if args.resume_from_checkpoint:
+    #     if args.resume_from_checkpoint is not None or args.resume_from_checkpoint != "":
+    #         accelerator.print(f"Resumed from checkpoint: {args.resume_from_checkpoint}")
+    #         accelerator.load_state(args.resume_from_checkpoint)
+    #         path = os.path.basename(args.resume_from_checkpoint)
+    #     else:
+    #         # Get the most recent checkpoint
+    #         dirs = [f.name for f in os.scandir(os.getcwd()) if f.is_dir()]
+    #         dirs.sort(key=os.path.getctime)
+    #         path = dirs[-1]  # Sorts folders by date modified, most recent checkpoint is the last
+    #     # Extract `epoch_{i}` or `step_{i}`
+    #     training_difference = os.path.splitext(path)[0]
 
+    #     if "epoch" in training_difference:
+    #         starting_epoch = int(training_difference.replace("epoch_", "")) + 1
+    #         resume_step = None
+    #         completed_steps = starting_epoch * num_update_steps_per_epoch
+    #     else:
+    #         # need to multiply `gradient_accumulation_steps` to reflect real steps
+    #         resume_step = int(training_difference.replace("step_", "")) * args.gradient_accumulation_steps
+    #         starting_epoch = resume_step // len(train_dataloader)
+    #         resume_step -= starting_epoch * len(train_dataloader)
+    #         completed_steps = resume_step // args.gradient_accumulation_step
+
+    # # update the progress_bar if load from checkpoint
+    # progress_bar.update(completed_steps)
 
     test_loader_list = [eval_dataloader]
     test_loader_names = ['eval']
     if args.testing_set != 'val':
         test_loader_list.append(val_dataloader)
         test_loader_names.append('val')
-
-    
-    def train(epoch):
-        print('\nEpoch: %d' % epoch)
-        model.train()
-
-        total = 0
-        correct = 0
-        train_loss = 0
         
-        for batch_idx, batch in enumerate(train_dataloader):
+    for epoch in range(starting_epoch, args.num_train_epochs):
+        print("Epoch:", epoch)
+        print("Train")
+        active_dataloader = train_dataloader
+        for step, train_batch in enumerate(active_dataloader):
 
-            if use_cuda:
-                batch['input_ids'] = batch['input_ids'].to(device_id)
-                batch['attention_mask'] = batch['attention_mask'].to(device_id)
-                batch['labels'] = batch['labels'].to(device_id)
-            
-            targets = batch['labels']
+            model.train()
 
-            torch.cuda.empty_cache()
             optimizer.zero_grad()
-            lr = adjust_learning_rate(optimizer, epoch,batch_idx)
-            outputs = model(**batch)
+            outputs = model(**train_batch)
+            y = train_batch['labels']
 
-            # print("output logits: ", outputs.logits)
-            # print("targets:", targets)
+            lr = lr_scheduler.step_and_update_lr(epoch)
 
             if (epoch%50)+1>45:
                 loss_noise = noise_loss(lr,args.alpha)*(args.temperature/datasize)**.5
-                loss = criterion(outputs.logits, targets)+ loss_noise
+                loss = torch.nn.CrossEntropyLoss()(outputs.logits, y) + loss_noise
             else:
-                loss = criterion(outputs.logits, targets)
+                loss = torch.nn.CrossEntropyLoss()(outputs.logits, y)
 
-            loss.backward()
+            # We keep track of the loss at each epoch
+
+            total_loss += loss.detach().cpu().float()
+            loss = loss / args.gradient_accumulation_steps
+
+            accelerator.backward(loss)
             optimizer.step()
             
-            # print("loss value:", loss.detach().cpu().float())
 
-            train_loss += loss.detach().cpu().float()
-            predicted = outputs.logits.argmax(dim=-1)
-            total += targets.size(0)
-            correct += predicted.eq(targets.data).cpu().sum()
+            del outputs, loss, y
+    
 
-
-        print('Training: Loss: %.3f | Acc: %.3f%% (%d/%d)'
-            % (train_loss/len(train_dataloader), 100.*correct.item()/total, correct, total))
-
-
-
-    def test(epoch):
+        # Test part
+        print("Test")
         model.eval()
-        # output_dir = "csgmcmc_step_0"
-        # output_dir = os.path.join(args.output_dir, output_dir)
-        test_loss = 0
-        correct = 0
-        total = 0
-
-        with torch.no_grad():
-            for batch_idx, batch in tqdm(enumerate(eval_dataloader)):
-                if use_cuda:
-                    batch['input_ids'] = batch['input_ids'].to(device_id)
-                    batch['attention_mask'] = batch['attention_mask'].to(device_id)
-                    batch['labels'] = batch['labels'].to(device_id)
-                
-                targets = batch['labels']
-            
+        samples_seen = 0
+        output_dicts = []
+        for step, batch in tqdm(enumerate(eval_dataloader)):
+            with torch.no_grad():
                 outputs = model(**batch)
-                loss = criterion(outputs.logits, targets)
-
-                test_loss += loss.detach().cpu().float()
                 predictions = outputs.logits.argmax(dim=-1) #if not is_regression else outputs.logits.squeeze()
-                total += targets.size(0)
 
-                correct += predictions.eq(targets.data).cpu().sum()
+                logits = outputs.logits.detach()
+                for j in range(logits.size(0)):
+                    probs = logits[j]  #F.softmax(logits[j], -1)
+                    label = batch["labels"]
+                    output_dict = {
+                        'index': args.per_device_eval_batch_size * step + j,
+                        'true': label[j].item(),
+                        'pred': logits[j].argmax().item(),
+                        'conf': probs.max().item(),
+                        'logits': logits[j].cpu().numpy().tolist(),
+                        'probs': probs.cpu().numpy().tolist(),
+                    }
+                    output_dicts.append(output_dict)
 
-                # logits = outputs.logits.detach()
-                # for j in range(logits.size(0)):
-                #     probs = logits[j]  #F.softmax(logits[j], -1)
-                #     label = targets
-                #     output_dict = {
-                #         'index': args.per_device_eval_batch_size * batch_idx + j,
-                #         'true': label[j].item(),
-                #         'pred': logits[j].argmax().item(),
-                #         'conf': probs.max().item(),
-                #         'logits': logits[j].cpu().numpy().tolist(),
-                #         'probs': probs.cpu().numpy().tolist(),
-                #     }
-                #     output_dicts.append(output_dict)
+                predictions, references = accelerator.gather((predictions, batch["labels"]))
+                # If we are in a multiprocess environment, the last batch has duplicates
+                if accelerator.num_processes > 1:
+                    if step == len(eval_dataloader) - 1:
+                        predictions = predictions[: len(eval_dataloader.dataset) - samples_seen]
+                        references = references[: len(eval_dataloader.dataset) - samples_seen]
+                    else:
+                        samples_seen += references.shape[0]
+                metric.add_batch(
+                    predictions=predictions,
+                    references=references,
+                )
 
-                # metric.add_batch(
-                #     predictions=predictions,
-                #     references=targets,
-                # )
-  
-        print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)\n'.format(
-            test_loss/len(eval_dataloader), correct, total, 100. * correct.item() / total))
-        
-        return test_loss/len(eval_dataloader), 100. * correct.item() / total
+                eval_metric = metric.compute()
+                logger.info(f"epoch {epoch}: {eval_metric}")
+
+                print("Result for Epoch:" ,epoch, eval_metric.items())
+                all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
+                output_dir = os.path.join(args.output_dir, "step_0")
+                all_results_output_path = os.path.join(output_dir, f"all_results.json")
 
 
-    val_accuracy = 0
-    val_loss = 0
-    outputs_dict = []
-    output_dir = "csgmcmc_step_0"
-    output_dir = os.path.join(args.output_dir, output_dir)
-    for epoch in range(starting_epoch, args.num_train_epochs):
-        train(epoch)
-        val_loss, val_accuracy = test(epoch)
-        outputs_dict = {
-            "val_loss":val_loss,
-            "val_accuracy":val_accuracy
-        }
+                if os.path.isfile(all_results_output_path):
+                    os.remove(all_results_output_path)
 
-    with open(output_dir, 'w+') as f:
-        for i, output_dict in enumerate(outputs_dict):
-            output_dict_str = json.dumps(output_dict)
-            f.write(f'{output_dict_str}\n')
+                with open(all_results_output_path, "w") as f:
+                    json.dump(all_results, f)
+
+                output_path = os.path.join(output_dir, f'eval_res.json')
+                print(f'writing outputs to \'{output_path}\'')
+
+
+                if os.path.isfile(output_path):
+                    os.remove(output_path)
+
+                with open(output_path, 'w+') as f:
+                    for i, output_dict in enumerate(output_dicts):
+                        output_dict_str = json.dumps(output_dict)
+                        f.write(f'{output_dict_str}\n')
+
+
+                del output_dicts, all_results, output_dict, eval_metric, logits, probs, label, predictions, references, outputs
         
 
 if __name__ == "__main__":

@@ -540,6 +540,7 @@ def main():
         test_loader_list.append(val_dataloader)
         test_loader_names.append('val')
         
+
     for epoch in range(starting_epoch, args.num_train_epochs):
         print("Epoch:", epoch)
         print("Train")
@@ -557,10 +558,9 @@ def main():
             loss = loss / args.gradient_accumulation_steps
             accelerator.backward(loss)
 
-            if step % args.gradient_accumulation_steps == 0 or step == len(train_dataloader) - 1:
-                optimizer.step()
-                lr_scheduler.step()
-                optimizer.zero_grad()
+            optimizer.step()
+            lr_scheduler.step()
+            optimizer.zero_grad()
 
 
             del outputs, loss, y
