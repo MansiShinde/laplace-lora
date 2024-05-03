@@ -67,7 +67,7 @@ def parse_args():
     parser.add_argument(
         "--max_length",
         type=int,
-        default=400,
+        default=150,
         help=(
             "The maximum total input sequence length after tokenization. Sequences longer than this will be truncated,"
             " sequences shorter will be padded if `--pad_to_max_length` is passed."
@@ -301,107 +301,6 @@ def main():
         extension = (args.train_file if args.train_file is not None else args.validation_file).split(".")[-1]
         raw_datasets = load_dataset(extension, data_files=data_files)
 
-    if 'ARC' in args.task_name or 'openbookqa' in args.task_name:
-        # Initialize counters
-        count_3_choices_train = 0
-        count_5_choices_train = 0
-        count_3_choices_valid = 0
-        count_5_choices_valid = 0
-
-        # Count in the training dataset
-        for example in raw_datasets["train"]:
-            if len(example['choices']['label']) == 3:
-                count_3_choices_train += 1
-            elif len(example['choices']['label']) == 5:
-                count_5_choices_train += 1
-
-        # Count in the validation dataset
-        for example in raw_datasets["validation"]:
-            if len(example['choices']['label']) == 3:
-                count_3_choices_valid += 1
-            elif len(example['choices']['label']) == 5:
-                count_5_choices_valid += 1
-
-        # Get total counts
-        total_train = len(raw_datasets["train"])
-        total_valid = len(raw_datasets["validation"])
-
-        # Print counts
-        print('====counts train====')
-        print(f"Total number of training examples: {total_train}")
-        print(f"Number of training questions with 3 choices: {count_3_choices_train}")
-        print(f"Number of training questions with 5 choices: {count_5_choices_train}")
-
-        print('====counts valid====')
-        print(f"Total number of validation examples: {total_valid}")
-        print(f"Number of validation questions with 3 choices: {count_3_choices_valid}")
-        print(f"Number of validation questions with 5 choices: {count_5_choices_valid}")
-
-        # Filter the examples in the training dataset
-        filtered_train = raw_datasets["train"].filter(lambda example: len(example['choices']['label']) == 4)
-
-        # Filter the examples in the validation dataset
-        filtered_valid = raw_datasets["validation"].filter(lambda example: len(example['choices']['label']) == 4)
-
-        # Filter the examples in the test dataset
-        filtered_test = raw_datasets["test"].filter(lambda example: len(example['choices']['label']) == 4)
-
-        # Replace the original datasets with the filtered datasets
-        raw_datasets["train"] = filtered_train
-        raw_datasets["validation"] = filtered_valid
-        raw_datasets["test"] = filtered_test
-
-        print('====counts train====')
-        print(f"Total number of training examples: {len(raw_datasets['train'])}")
-        print('====counts valid====')
-        print(f"Total number of validation examples: {len(raw_datasets['validation'])}")
-
-        def convert_choices_to_alpha(example):
-            # Define a mapping from numerical to alphabetical labels
-            mapping = {'1': 'A', '2': 'B', '3': 'C', '4': 'D'}
-
-            # Convert the 'label' field in 'choices'
-            example['choices']['label'] = [mapping.get(label, label) for label in example['choices']['label']]
-
-            # Convert the 'answerKey' field
-            example['answerKey'] = mapping.get(example['answerKey'], example['answerKey'])
-
-            example['choices']['text'] = [text if text.endswith('.') else text + '.' for text in example['choices']['text']]
-            example['choices']['text'] = [text[0].upper() + text[1:] if text else text for text in example['choices']['text']]
-    
-
-            return example
-
-        # Apply the conversion to the training, validation, and test datasets
-        raw_datasets["train"] = raw_datasets["train"].map(convert_choices_to_alpha)
-        raw_datasets["validation"] = raw_datasets["validation"].map(convert_choices_to_alpha)
-        raw_datasets["test"] = raw_datasets["test"].map(convert_choices_to_alpha)
-
-        print('====train data====')
-        from collections import Counter
-
-        # Initialize counters for training and validation datasets
-        counter_train = Counter()
-        counter_valid = Counter()
-
-        # Count in the training dataset
-        for example in raw_datasets["train"]:
-            counter_train.update(example['answerKey'])
-
-        # Count in the validation dataset
-        for example in raw_datasets["validation"]:
-            counter_valid.update(example['answerKey'])
-
-        # Print the results
-        print("Training dataset counts:")
-        for choice, count in counter_train.items():
-            print(f"Choice {choice}: {count} occurrences")
-
-        print("Validation dataset counts:")
-        for choice, count in counter_valid.items():
-            print(f"Choice {choice}: {count} occurrences")
-
-
     # Load pretrained model and tokenizer
     #
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
@@ -416,7 +315,6 @@ def main():
     )
 
 
-    
     target_modules=['v_proj','q_proj']
     if args.lm_head:
         target_modules.append('lm_head')
@@ -510,8 +408,6 @@ def main():
 
 
     # Prepare everything with our `accelerator`.
-
-    
     class WrappedModel(torch.nn.Module):
         def __init__(self, model):
             super().__init__()
@@ -573,17 +469,17 @@ def main():
     # args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
 
     # Figure out how many steps we should save the Accelerator states
-    checkpointing_steps = args.checkpointing_steps
-    if checkpointing_steps is not None and checkpointing_steps.isdigit():
-        checkpointing_steps = int(checkpointing_steps)
+    # checkpointing_steps = args.checkpointing_steps
+    # if checkpointing_steps is not None and checkpointing_steps.isdigit():
+    #     checkpointing_steps = int(checkpointing_steps)
 
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
-    if args.with_tracking:
-        experiment_config = vars(args)
-        # TensorBoard cannot log Enums, need the raw value
-        experiment_config["lr_scheduler_type"] = experiment_config["lr_scheduler_type"].value
-        accelerator.init_trackers("glue_no_trainer", experiment_config)
+    # if args.with_tracking:
+    #     experiment_config = vars(args)
+    #     # TensorBoard cannot log Enums, need the raw value
+    #     experiment_config["lr_scheduler_type"] = experiment_config["lr_scheduler_type"].value
+    #     accelerator.init_trackers("glue_no_trainer", experiment_config)
 
     # Get the metric function
     if args.task_name is not None:
@@ -605,38 +501,38 @@ def main():
     logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
     logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
-    logger.info(f"  Total optimization steps = {args.max_train_steps}")
+    # logger.info(f"  Total optimization steps = {args.max_train_steps}")
     # Only show the progress bar once on each machine.
-    progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
+    # progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
     completed_steps = 0
     starting_epoch = 0
     # Potentially load in the weights and states from a previous save
-    if args.resume_from_checkpoint:
-        if args.resume_from_checkpoint is not None or args.resume_from_checkpoint != "":
-            accelerator.print(f"Resumed from checkpoint: {args.resume_from_checkpoint}")
-            accelerator.load_state(args.resume_from_checkpoint)
-            path = os.path.basename(args.resume_from_checkpoint)
-        else:
-            # Get the most recent checkpoint
-            dirs = [f.name for f in os.scandir(os.getcwd()) if f.is_dir()]
-            dirs.sort(key=os.path.getctime)
-            path = dirs[-1]  # Sorts folders by date modified, most recent checkpoint is the last
-        # Extract `epoch_{i}` or `step_{i}`
-        training_difference = os.path.splitext(path)[0]
+    # if args.resume_from_checkpoint:
+    #     if args.resume_from_checkpoint is not None or args.resume_from_checkpoint != "":
+    #         accelerator.print(f"Resumed from checkpoint: {args.resume_from_checkpoint}")
+    #         accelerator.load_state(args.resume_from_checkpoint)
+    #         path = os.path.basename(args.resume_from_checkpoint)
+    #     else:
+    #         # Get the most recent checkpoint
+    #         dirs = [f.name for f in os.scandir(os.getcwd()) if f.is_dir()]
+    #         dirs.sort(key=os.path.getctime)
+    #         path = dirs[-1]  # Sorts folders by date modified, most recent checkpoint is the last
+    #     # Extract `epoch_{i}` or `step_{i}`
+    #     training_difference = os.path.splitext(path)[0]
 
-        if "epoch" in training_difference:
-            starting_epoch = int(training_difference.replace("epoch_", "")) + 1
-            resume_step = None
-            completed_steps = starting_epoch * num_update_steps_per_epoch
-        else:
-            # need to multiply `gradient_accumulation_steps` to reflect real steps
-            resume_step = int(training_difference.replace("step_", "")) * args.gradient_accumulation_steps
-            starting_epoch = resume_step // len(train_dataloader)
-            resume_step -= starting_epoch * len(train_dataloader)
-            completed_steps = resume_step // args.gradient_accumulation_step
+    #     if "epoch" in training_difference:
+    #         starting_epoch = int(training_difference.replace("epoch_", "")) + 1
+    #         resume_step = None
+    #         completed_steps = starting_epoch * num_update_steps_per_epoch
+    #     else:
+    #         # need to multiply `gradient_accumulation_steps` to reflect real steps
+    #         resume_step = int(training_difference.replace("step_", "")) * args.gradient_accumulation_steps
+    #         starting_epoch = resume_step // len(train_dataloader)
+    #         resume_step -= starting_epoch * len(train_dataloader)
+    #         completed_steps = resume_step // args.gradient_accumulation_step
 
-    # update the progress_bar if load from checkpoint
-    progress_bar.update(completed_steps)
+    # # update the progress_bar if load from checkpoint
+    # progress_bar.update(completed_steps)
 
     test_loader_list = [eval_dataloader]
     test_loader_names = ['eval']
@@ -645,97 +541,11 @@ def main():
         test_loader_names.append('val')
         
     for epoch in range(starting_epoch, args.num_train_epochs):
+        print("Epoch:", epoch)
+        print("Train")
         active_dataloader = train_dataloader
         for step, train_batch in enumerate(active_dataloader):
 
-            if isinstance(checkpointing_steps, int):
-                for test_loader, test_loader_name in zip(test_loader_list, test_loader_names):
-                    if (completed_steps+1) % checkpointing_steps == 0 or completed_steps == 0:
-                        output_dir = f"step_{completed_steps}"
-                        if args.output_dir is not None:
-                            output_dir = os.path.join(args.output_dir, output_dir)
-                        # accelerator.save_state(output_dir)
-
-                        model.eval()
-                        samples_seen = 0
-                        output_dicts = []
-                        for step, batch in tqdm(enumerate(test_loader)):
-                            with torch.no_grad():
-                                outputs = model(**batch)
-                            predictions = outputs.logits.argmax(dim=-1) #if not is_regression else outputs.logits.squeeze()
-
-                            logits = outputs.logits.detach()
-                            for j in range(logits.size(0)):
-                                probs = logits[j]  #F.softmax(logits[j], -1)
-                                label = batch["labels"]
-                                output_dict = {
-                                    'index': args.per_device_eval_batch_size * step + j,
-                                    'true': label[j].item(),
-                                    'pred': logits[j].argmax().item(),
-                                    'conf': probs.max().item(),
-                                    'logits': logits[j].cpu().numpy().tolist(),
-                                    'probs': probs.cpu().numpy().tolist(),
-                                }
-                                output_dicts.append(output_dict)
-
-                            predictions, references = accelerator.gather((predictions, batch["labels"]))
-                            # If we are in a multiprocess environment, the last batch has duplicates
-                            if accelerator.num_processes > 1:
-                                if step == len(eval_dataloader) - 1:
-                                    predictions = predictions[: len(eval_dataloader.dataset) - samples_seen]
-                                    references = references[: len(eval_dataloader.dataset) - samples_seen]
-                                else:
-                                    samples_seen += references.shape[0]
-                            metric.add_batch(
-                                predictions=predictions,
-                                references=references,
-                            )
-
-                        eval_metric = metric.compute()
-                        logger.info(f"epoch {epoch}: {eval_metric}")
-
-                        if test_loader_name == 'eval':
-                            accelerator.wait_for_everyone()
-                            # unwrapped_model = accelerator.unwrap_model(model).model
-                            accelerator.unwrap_model(model).model.save_pretrained(
-                                output_dir, is_main_process=accelerator.is_main_process, save_function=accelerator.save
-                            )
-                            if accelerator.is_main_process:
-                                tokenizer.save_pretrained(output_dir)
-                            
-
-                        all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
-
-                        if test_loader_name == 'val':
-                            all_results_output_path = os.path.join(output_dir, f"all_results_val.json")
-                        else:
-                            all_results_output_path = os.path.join(output_dir, f"all_results.json")
-                        if os.path.isfile(all_results_output_path):
-                            os.remove(all_results_output_path)
-
-                        with open(all_results_output_path, "w") as f:
-                            json.dump(all_results, f)
-
-                        if test_loader_name == 'val':
-                            output_path = os.path.join(output_dir, f'eval_res_val.json')
-                        else:
-                            output_path = os.path.join(output_dir, f'eval_res.json')
-                        print(f'writing outputs to \'{output_path}\'')
-
-                        if os.path.isfile(output_path):
-                            os.remove(output_path)
-
-                        with open(output_path, 'w+') as f:
-                            for i, output_dict in enumerate(output_dicts):
-                                output_dict_str = json.dumps(output_dict)
-                                f.write(f'{output_dict_str}\n')
-
-
-                        del output_dicts, all_results, output_dict, eval_metric, logits, probs, label, predictions, references, outputs
-        
-            if completed_steps > args.max_train_steps:
-                break
-            
             model.train()
             outputs = model(**train_batch)
             y = train_batch['labels']
@@ -751,11 +561,77 @@ def main():
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
-                progress_bar.update(1)
-                completed_steps += 1
+
 
             del outputs, loss, y
     
+
+        # Test part
+        print("Test")
+        model.eval()
+        samples_seen = 0
+        output_dicts = []
+        for step, batch in tqdm(enumerate(eval_dataloader)):
+            with torch.no_grad():
+                outputs = model(**batch)
+                predictions = outputs.logits.argmax(dim=-1) #if not is_regression else outputs.logits.squeeze()
+
+                logits = outputs.logits.detach()
+                for j in range(logits.size(0)):
+                    probs = logits[j]  #F.softmax(logits[j], -1)
+                    label = batch["labels"]
+                    output_dict = {
+                        'index': args.per_device_eval_batch_size * step + j,
+                        'true': label[j].item(),
+                        'pred': logits[j].argmax().item(),
+                        'conf': probs.max().item(),
+                        'logits': logits[j].cpu().numpy().tolist(),
+                        'probs': probs.cpu().numpy().tolist(),
+                    }
+                    output_dicts.append(output_dict)
+
+                predictions, references = accelerator.gather((predictions, batch["labels"]))
+                # If we are in a multiprocess environment, the last batch has duplicates
+                if accelerator.num_processes > 1:
+                    if step == len(eval_dataloader) - 1:
+                        predictions = predictions[: len(eval_dataloader.dataset) - samples_seen]
+                        references = references[: len(eval_dataloader.dataset) - samples_seen]
+                    else:
+                        samples_seen += references.shape[0]
+                metric.add_batch(
+                    predictions=predictions,
+                    references=references,
+                )
+
+                eval_metric = metric.compute()
+                logger.info(f"epoch {epoch}: {eval_metric}")
+
+                all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
+                output_dir = os.path.join(args.output_dir, "step_0")
+                all_results_output_path = os.path.join(output_dir, f"all_results.json")
+
+
+                if os.path.isfile(all_results_output_path):
+                    os.remove(all_results_output_path)
+
+                with open(all_results_output_path, "w") as f:
+                    json.dump(all_results, f)
+
+                output_path = os.path.join(output_dir, f'eval_res.json')
+                print(f'writing outputs to \'{output_path}\'')
+
+
+                if os.path.isfile(output_path):
+                    os.remove(output_path)
+
+                with open(output_path, 'w+') as f:
+                    for i, output_dict in enumerate(output_dicts):
+                        output_dict_str = json.dumps(output_dict)
+                        f.write(f'{output_dict_str}\n')
+
+
+                del output_dicts, all_results, output_dict, eval_metric, logits, probs, label, predictions, references, outputs
+        
 
 if __name__ == "__main__":
     main()
