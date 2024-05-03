@@ -507,7 +507,7 @@ def main():
             "weight_decay": 0.0,
         },
     ]
-    optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate, momentum=0.9, weight_decay=0.0)
+    optimizer = torch.optim.SGD(optimizer_grouped_parameters, lr=args.learning_rate, momentum=0.9, weight_decay=0.0)
 
     lr_scheduler = ScheduledOptim(
         optimizer=optimizer, 
@@ -601,6 +601,8 @@ def main():
     if args.testing_set != 'val':
         test_loader_list.append(val_dataloader)
         test_loader_names.append('val')
+    
+    total_loss = 0
         
     for epoch in range(starting_epoch, args.num_train_epochs):
         print("Epoch:", epoch)
@@ -624,9 +626,6 @@ def main():
 
             # We keep track of the loss at each epoch
 
-            total_loss += loss.detach().cpu().float()
-            loss = loss / args.gradient_accumulation_steps
-
             accelerator.backward(loss)
             optimizer.step()
             
@@ -641,22 +640,12 @@ def main():
         output_dicts = []
         for step, batch in tqdm(enumerate(eval_dataloader)):
             with torch.no_grad():
+                y = train_batch['labels']
                 outputs = model(**batch)
                 predictions = outputs.logits.argmax(dim=-1) #if not is_regression else outputs.logits.squeeze()
-
-                logits = outputs.logits.detach()
-                for j in range(logits.size(0)):
-                    probs = logits[j]  #F.softmax(logits[j], -1)
-                    label = batch["labels"]
-                    output_dict = {
-                        'index': args.per_device_eval_batch_size * step + j,
-                        'true': label[j].item(),
-                        'pred': logits[j].argmax().item(),
-                        'conf': probs.max().item(),
-                        'logits': logits[j].cpu().numpy().tolist(),
-                        'probs': probs.cpu().numpy().tolist(),
-                    }
-                    output_dicts.append(output_dict)
+                
+                loss = torch.nn.CrossEntropyLoss()(outputs.logits, y)
+                total_loss += loss.detach().cpu().float()
 
                 predictions, references = accelerator.gather((predictions, batch["labels"]))
                 # If we are in a multiprocess environment, the last batch has duplicates
@@ -672,31 +661,30 @@ def main():
                 )
 
                 eval_metric = metric.compute()
-                logger.info(f"epoch {epoch}: {eval_metric}")
+                
 
-                print("Result for Epoch:" ,epoch, eval_metric.items())
+                output_dict = {
+                    "epoch": epoch,
+                    "step": step,
+                    "total_loss": loss.detach().cpu().float(),
+                    "accuracy": eval_metric
+                }
+
+                logger.info(output_dict)
+
                 all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
                 output_dir = os.path.join(args.output_dir, "step_0")
+                os.makedirs(output_dir, exist_ok=True)
                 all_results_output_path = os.path.join(output_dir, f"all_results.json")
 
-
+                loaded = {}
                 if os.path.isfile(all_results_output_path):
-                    os.remove(all_results_output_path)
-
-                with open(all_results_output_path, "w") as f:
-                    json.dump(all_results, f)
-
-                output_path = os.path.join(output_dir, f'eval_res.json')
-                print(f'writing outputs to \'{output_path}\'')
-
-
-                if os.path.isfile(output_path):
-                    os.remove(output_path)
-
-                with open(output_path, 'w+') as f:
-                    for i, output_dict in enumerate(output_dicts):
-                        output_dict_str = json.dumps(output_dict)
-                        f.write(f'{output_dict_str}\n')
+                    with open(all_results_output_path,"r") as f:
+                        loaded = json.load(f)
+                    loaded.append(output_dict)
+                else:
+                    with open(all_results_output_path, 'w+') as f:
+                        json.dump(output_dict, f)
 
 
                 del output_dicts, all_results, output_dict, eval_metric, logits, probs, label, predictions, references, outputs
