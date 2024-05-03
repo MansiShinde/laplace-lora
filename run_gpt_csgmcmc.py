@@ -666,7 +666,7 @@ def main():
                     "epoch": epoch,
                     "step": step,
                     "total_loss": loss.data.item(),
-                    "accuracy": eval_metric.items()
+                    "accuracy": dict(eval_metric.items())
                 }
 
                 logger.info(output_dict)
