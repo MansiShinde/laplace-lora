@@ -316,7 +316,7 @@ def main():
     peft_config = LoraConfig(task_type="CAUSAL_LM", inference_mode=False, r=8, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout, target_modules=target_modules)
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
-    print(model)
+    # print(model)
 
     if use_cuda:
         model.cuda(device_id)
@@ -346,7 +346,6 @@ def main():
             map_dict = {"1": 0, "2": 1, "":None}
             result["labels"] = [map_dict[label] for label in examples["answer"]]
 
-        print("processed data result: ", result)
         return result
 
     
@@ -459,6 +458,7 @@ def main():
     
 
     model = WrappedModel(model)
+    print("Wrapped Model: ",model)
 
     if use_cuda:
         model.cuda(device_id)
