@@ -484,7 +484,6 @@ def main():
             output_dict = self.model(**kwargs)
 
             logits = output_dict['logits']
-            print("print logits in forward", logits)
             selected_logits = logits[:, -1, self.id_list]
             output_dict['logits'] = selected_logits
             return output_dict   
@@ -687,7 +686,7 @@ def main():
                         json.dump(output_dict, f)
 
 
-                del output_dicts, all_results, output_dict, eval_metric, logits, probs, label, predictions, references, outputs
+                del all_results, output_dict, eval_metric, predictions, references, outputs
         
 
 if __name__ == "__main__":
