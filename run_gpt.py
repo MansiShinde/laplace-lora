@@ -613,17 +613,17 @@ def main():
                 with open(all_results_output_path, 'w+') as f:
                     json.dump(loaded, f)
 
-                if test_loader_name == 'eval':
-                    accelerator.wait_for_everyone()
-                    # unwrapped_model = accelerator.unwrap_model(model).model
-                    accelerator.unwrap_model(model).model.save_pretrained(
-                        output_dir, is_main_process=accelerator.is_main_process, save_function=accelerator.save
-                    )
-                    if accelerator.is_main_process:
-                        tokenizer.save_pretrained(output_dir)
+            del all_results, output_dict, eval_metric, predictions, references, outputs
+        
 
-
-                del all_results, output_dict, eval_metric, predictions, references, outputs
+        if test_loader_name == 'eval':
+            accelerator.wait_for_everyone()
+            # unwrapped_model = accelerator.unwrap_model(model).model
+            accelerator.unwrap_model(model).model.save_pretrained(
+                output_dir, is_main_process=accelerator.is_main_process, save_function=accelerator.save
+            )
+            if accelerator.is_main_process:
+                tokenizer.save_pretrained(output_dir)
         
 
 if __name__ == "__main__":
