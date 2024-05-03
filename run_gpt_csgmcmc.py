@@ -644,7 +644,7 @@ def main():
                 predictions = outputs.logits.argmax(dim=-1) #if not is_regression else outputs.logits.squeeze()
                 
                 loss = torch.nn.CrossEntropyLoss()(outputs.logits, y)
-                total_loss += loss.detach().cpu().float()
+                total_loss += loss.data.item()
 
                 predictions, references = accelerator.gather((predictions, batch["labels"]))
                 # If we are in a multiprocess environment, the last batch has duplicates
@@ -665,8 +665,8 @@ def main():
                 output_dict = {
                     "epoch": epoch,
                     "step": step,
-                    "total_loss": loss.detach().cpu().float(),
-                    "accuracy": eval_metric
+                    "total_loss": loss.data.item(),
+                    "accuracy": eval_metric.items()
                 }
 
                 logger.info(output_dict)
@@ -676,7 +676,7 @@ def main():
                 os.makedirs(output_dir, exist_ok=True)
                 all_results_output_path = os.path.join(output_dir, f"all_results.json")
 
-                loaded = {}
+                loaded = []
                 if os.path.isfile(all_results_output_path):
                     with open(all_results_output_path,"r") as f:
                         loaded = json.load(f)
