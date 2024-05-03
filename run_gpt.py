@@ -550,8 +550,8 @@ def main():
             loss = torch.nn.CrossEntropyLoss()(outputs.logits, y)
 
             # We keep track of the loss at each epoch
-            if args.with_tracking:
-                total_loss += loss.detach().cpu().float()
+
+            total_loss += loss.detach().cpu().float()
             loss = loss / args.gradient_accumulation_steps
             accelerator.backward(loss)
 
@@ -567,15 +567,10 @@ def main():
         print("Test")
         model.eval()
         samples_seen = 0
-        output_dicts = []
-        total_loss = 0
         for step, batch in tqdm(enumerate(eval_dataloader)):
             with torch.no_grad():
                 outputs = model(**batch)
                 predictions = outputs.logits.argmax(dim=-1) #if not is_regression else outputs.logits.squeeze()
-                
-                loss = torch.nn.CrossEntropyLoss()(outputs.logits, batch['labels'])
-                total_loss += loss.data.item()
 
                 predictions, references = accelerator.gather((predictions, batch["labels"]))
                 # If we are in a multiprocess environment, the last batch has duplicates
@@ -595,7 +590,6 @@ def main():
                 output_dict = {
                     "epoch": epoch,
                     "step": step,
-                    "loss": loss.data.item(),
                     "accuracy": dict(eval_metric.items())
                 }
 
@@ -629,7 +623,7 @@ def main():
                         tokenizer.save_pretrained(output_dir)
 
 
-                del output_dicts, all_results, output_dict, eval_metric, predictions, references, outputs
+                del all_results, output_dict, eval_metric, predictions, references, outputs
         
 
 if __name__ == "__main__":

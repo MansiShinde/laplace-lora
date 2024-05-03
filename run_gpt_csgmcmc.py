@@ -617,7 +617,7 @@ def main():
 
             lr = lr_scheduler.step_and_update_lr(epoch)
 
-            if (epoch%50)+1>45:
+            if (epoch%5)+1>5:
                 loss_noise = noise_loss(lr,args.alpha)*(args.temperature/datasize)**.5
                 loss = torch.nn.CrossEntropyLoss()(outputs.logits, y) + loss_noise
             else:
@@ -642,9 +642,6 @@ def main():
                 y = train_batch['labels']
                 outputs = model(**batch)
                 predictions = outputs.logits.argmax(dim=-1) #if not is_regression else outputs.logits.squeeze()
-                
-                loss = torch.nn.CrossEntropyLoss()(outputs.logits, y)
-                total_loss += loss.data.item()
 
                 predictions, references = accelerator.gather((predictions, batch["labels"]))
                 # If we are in a multiprocess environment, the last batch has duplicates
@@ -665,7 +662,6 @@ def main():
                 output_dict = {
                     "epoch": epoch,
                     "step": step,
-                    "loss": loss.data.item(),
                     "accuracy": dict(eval_metric.items())
                 }
 

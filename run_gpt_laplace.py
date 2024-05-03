@@ -669,9 +669,6 @@ def main(load_step):
 
         logits = f_mu + (torch.linalg.cholesky(f_var + torch.eye(f_var.shape[-1]).to(f_var.device)*1e-6).to(f_mu.dtype) @ torch.randn_like(f_mu).unsqueeze(-1).to(f_mu.dtype).to(accelerator.device)).squeeze(-1)
         logits = torch.softmax(logits, dim=-1).mean(0)
-
-        loss = torch.nn.CrossEntropyLoss()(logits.logits, batch['labels'])
-        total_loss += loss.data.item()
         
         predictions = logits.argmax(dim=-1)
 
@@ -728,7 +725,6 @@ def main(load_step):
     output_dict = {
         "epoch": load_step,
         "step": step,
-        "total_loss": total_loss,
         "accuracy": dict(eval_metric.items())
     }
 
