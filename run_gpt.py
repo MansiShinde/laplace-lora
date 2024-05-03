@@ -570,10 +570,14 @@ def main():
         model.eval()
         samples_seen = 0
         output_dicts = []
+        total_loss = 0
         for step, batch in tqdm(enumerate(eval_dataloader)):
             with torch.no_grad():
                 outputs = model(**batch)
                 predictions = outputs.logits.argmax(dim=-1) #if not is_regression else outputs.logits.squeeze()
+                
+                loss = torch.nn.CrossEntropyLoss()(outputs.logits, y)
+                total_loss += loss.data.item()
 
                 predictions, references = accelerator.gather((predictions, batch["labels"]))
                 # If we are in a multiprocess environment, the last batch has duplicates
