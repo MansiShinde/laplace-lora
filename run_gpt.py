@@ -537,7 +537,7 @@ def main():
     test_loader_name = 'eval'
 
         
-
+    total_loss = 0
     for epoch in range(starting_epoch, args.num_train_epochs):
         print("Epoch:", epoch)
         print("Train")
