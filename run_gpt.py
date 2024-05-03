@@ -601,7 +601,7 @@ def main():
                     "accuracy": dict(eval_metric.items())
                 }
 
-                logger.info(f"epoch {epoch}: {eval_metric}")
+                logger.info(output_dict)
 
                 all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
                 output_dir = os.path.join(args.output_dir, "step_0")
@@ -623,7 +623,7 @@ def main():
 
 
 
-                del output_dicts, all_results, output_dict, eval_metric, logits, probs, label, predictions, references, outputs
+                del output_dicts, all_results, output_dict, eval_metric, predictions, references, outputs
         
 
 if __name__ == "__main__":

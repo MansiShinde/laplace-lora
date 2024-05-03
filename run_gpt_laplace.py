@@ -732,6 +732,7 @@ def main(load_step):
         "accuracy": dict(eval_metric.items())
     }
 
+    logger.info(output_dict)
 
     all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
 
