@@ -67,7 +67,7 @@ def parse_args():
     parser.add_argument(
         "--max_length",
         type=int,
-        default=200,
+        default=150,
         help=(
             "The maximum total input sequence length after tokenization. Sequences longer than this will be truncated,"
             " sequences shorter will be padded if `--pad_to_max_length` is passed."
@@ -316,10 +316,40 @@ def main():
     peft_config = LoraConfig(task_type="CAUSAL_LM", inference_mode=False, r=8, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout, target_modules=target_modules)
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
-    # print(model)
+
+    class WrappedModel(torch.nn.Module):
+        def __init__(self, model):
+            super().__init__()
+
+            if args.task_name == 'boolq':
+                self.id_list = [tokenizer.encode('False')[1], tokenizer.encode('True')[1]]
+            elif args.task_name == 'openbookqa':
+                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1], tokenizer.encode('C')[1], tokenizer.encode('D')[1]]
+            elif 'ARC' in args.task_name:
+                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1], tokenizer.encode('C')[1], tokenizer.encode('D')[1]]
+            elif 'winogrande' in args.task_name:
+                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1]]
+
+            self.model = model
+
+
+        def forward(self, **kwargs):
+            kwargs.pop('labels', None)
+            output_dict = self.model(**kwargs)
+            logits = output_dict['logits']
+            # print("logits in forward:", logits)
+            selected_logits = logits[:, -1, self.id_list]
+            output_dict['logits'] = selected_logits
+            return output_dict   
+    
+
+    model = WrappedModel(model)
+    print("Wrapped Model: ",model)
 
     if use_cuda:
         model.cuda(device_id)
+
+
 
     padding = "max_length" if args.pad_to_max_length else False
 
@@ -374,9 +404,9 @@ def main():
     elif args.testing_set == 'val':
         eval_dataset = processed_dataset
 
-    # Log a few random samples from the training set:
-    # for index in random.sample(range(len(train_dataset)), 3):
-    #     logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
+    # Print a few random samples from the training set:
+    for index in random.sample(range(len(train_dataset)), 3):
+        print(f"Sample {index} of the training set: {train_dataset[index]}.")
 
     # DataLoaders creation:
     if args.pad_to_max_length:
@@ -431,39 +461,6 @@ def main():
     #     overrode_max_train_steps = True
 
     
-    class WrappedModel(torch.nn.Module):
-        def __init__(self, model):
-            super().__init__()
-
-            if args.task_name == 'boolq':
-                self.id_list = [tokenizer.encode('False')[1], tokenizer.encode('True')[1]]
-            elif args.task_name == 'openbookqa':
-                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1], tokenizer.encode('C')[1], tokenizer.encode('D')[1]]
-            elif 'ARC' in args.task_name:
-                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1], tokenizer.encode('C')[1], tokenizer.encode('D')[1]]
-            elif 'winogrande' in args.task_name:
-                self.id_list = [tokenizer.encode('A')[1], tokenizer.encode('B')[1]]
-
-            self.model = model
-
-
-        def forward(self, **kwargs):
-            kwargs.pop('labels', None)
-            output_dict = self.model(**kwargs)
-            logits = output_dict['logits']
-            print("logits in forward:", logits)
-            selected_logits = logits[:, -1, self.id_list]
-            output_dict['logits'] = selected_logits
-            return output_dict   
-    
-
-    model = WrappedModel(model)
-    print("Wrapped Model: ",model)
-
-    if use_cuda:
-        model.cuda(device_id)
-        # cudnn.benchmark = True 
-        # cudnn.deterministic = True
 
     no_decay = ["bias", "LayerNorm.weight"]
     print("Model named parameters:", model.named_parameters())
@@ -478,7 +475,6 @@ def main():
         },
     ]
     optimizer = torch.optim.SGD(optimizer_grouped_parameters, lr=args.learning_rate, momentum=1-args.alpha, weight_decay=0.0)
-
     criterion = torch.nn.CrossEntropyLoss()
         
 
