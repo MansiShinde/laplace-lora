@@ -643,7 +643,8 @@ def main():
                 outputs = model(**batch)
                 predictions = outputs.logits.argmax(dim=-1) #if not is_regression else outputs.logits.squeeze()
                 
-                loss = torch.nn.CrossEntropyLoss()(outputs.logits, y)
+                print("outputs logits shape, target shape:", outputs.shape, y.shape)
+                loss = torch.nn.CrossEntropyLoss()(outputs.logits.float(), y.float())
                 total_loss += loss.data.item()
 
                 predictions, references = accelerator.gather((predictions, batch["labels"]))
