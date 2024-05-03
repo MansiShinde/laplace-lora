@@ -531,7 +531,9 @@ def main():
         def forward(self, **kwargs):
             kwargs.pop('labels', None)
             output_dict = self.model(**kwargs)
+
             logits = output_dict['logits']
+            print("print logits in forward", logits)
             selected_logits = logits[:, -1, self.id_list]
             output_dict['logits'] = selected_logits
             return output_dict   

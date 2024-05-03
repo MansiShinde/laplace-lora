@@ -75,7 +75,7 @@ def parse_args():
     )
     parser.add_argument(
         "--pad_to_max_length",
-        default=True,
+        # default=True,
         action="store_true",
         help="If passed, pad all samples to `max_length`. Otherwise, dynamic padding is used.",
     )
@@ -286,10 +286,11 @@ def main():
         extension = (args.train_file if args.train_file is not None else args.validation_file).split(".")[-1]
         raw_datasets = load_dataset(extension, data_files=data_files)
     
+
     print("raw datasets 1st:", raw_datasets)
 
-    print("length of raw datasets:", len(raw_datasets))
-    datasize = len(raw_datasets)
+    print("length of raw datasets:", len(raw_datasets['train']))
+    datasize = len(raw_datasets['train'])
     num_batch = datasize/args.per_device_train_batch_size + 1
     lr_0 = args.learning_rate # initial lr
     M = 4 # number of cycles
@@ -344,6 +345,8 @@ def main():
             result = tokenizer(texts, padding=padding, max_length=args.max_length, truncation=True)
             map_dict = {"1": 0, "2": 1, "":None}
             result["labels"] = [map_dict[label] for label in examples["answer"]]
+
+        print("processed data result: ", result)
         return result
 
     
@@ -477,26 +480,6 @@ def main():
     optimizer = torch.optim.SGD(optimizer_grouped_parameters, lr=args.learning_rate, momentum=1-args.alpha, weight_decay=0.0)
 
     criterion = torch.nn.CrossEntropyLoss()
-
-
-    # We need to recalculate our total training steps as the size of the training dataloader may have changed
-    # num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
-    # if overrode_max_train_steps:
-    #     args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
-    # Afterwards we recalculate our number of training epochs
-    # args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
-
-    
-    checkpointing_steps = args.checkpointing_steps
-    if checkpointing_steps is not None and checkpointing_steps.isdigit():
-        checkpointing_steps = int(checkpointing_steps)
-
-    # We need to initialize the trackers we use, and also store our configuration.
-    # The trackers initializes automatically on the main process.
-    # if args.with_tracking:
-    #     experiment_config = vars(args)
-    #     # TensorBoard cannot log Enums, need the raw value
-    #     experiment_config["lr_scheduler_type"] = experiment_config["lr_scheduler_type"].value
         
 
     # Get the metric function
@@ -523,28 +506,6 @@ def main():
     # Only show the progress bar once on each machine.
     # progress_bar = tqdm(range(args.max_train_steps))
     starting_epoch = 0
-    # Potentially load in the weights and states from a previous save
-    # if args.resume_from_checkpoint:
-    #     if args.resume_from_checkpoint is not None or args.resume_from_checkpoint != "":
-    #         path = os.path.basename(args.resume_from_checkpoint)
-    #     else:
-    #         # Get the most recent checkpoint
-    #         dirs = [f.name for f in os.scandir(os.getcwd()) if f.is_dir()]
-    #         dirs.sort(key=os.path.getctime)
-    #         path = dirs[-1]  # Sorts folders by date modified, most recent checkpoint is the last
-    #     # Extract `epoch_{i}` or `step_{i}`
-    #     training_difference = os.path.splitext(path)[0]
-
-    #     if "epoch" in training_difference:
-    #         starting_epoch = int(training_difference.replace("epoch_", "")) + 1
-    #         resume_step = None
-    #         completed_steps = starting_epoch * num_update_steps_per_epoch
-    #     else:
-    #         # need to multiply `gradient_accumulation_steps` to reflect real steps
-    #         resume_step = int(training_difference.replace("step_", "")) * args.gradient_accumulation_steps
-    #         starting_epoch = resume_step // len(train_dataloader)
-    #         resume_step -= starting_epoch * len(train_dataloader)
-    #         completed_steps = resume_step // args.gradient_accumulation_step
 
 
     test_loader_list = [eval_dataloader]
@@ -651,46 +612,6 @@ def main():
         
         return test_loss/len(eval_dataloader), 100. * correct.item() / total
 
-
-        # eval_metric = metric.compute()
-        # logger.info(f"epoch {epoch}: {eval_metric}")
-
-        # if test_loader_name == 'eval':
-        #     model.save_pretrained(
-        #         output_dir
-        #     )
-        #     tokenizer.save_pretrained(output_dir)
-                
-            
-
-        # all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
-
-        # if test_loader_name == 'val':
-        #     all_results_output_path = os.path.join(output_dir, f"all_results_val.json")
-        # else:
-        #     all_results_output_path = os.path.join(output_dir, f"all_results.json")
-        # if os.path.isfile(all_results_output_path):
-        #     os.remove(all_results_output_path)
-
-        # with open(all_results_output_path, "w") as f:
-        #     json.dump(all_results, f)
-
-        # if test_loader_name == 'val':
-        #     output_path = os.path.join(output_dir, f'eval_res_val.json')
-        # else:
-        #     output_path = os.path.join(output_dir, f'eval_res.json')
-        # print(f'writing outputs to \'{output_path}\'')
-
-        # if os.path.isfile(output_path):
-        #     os.remove(output_path)
-
-        # with open(output_path, 'w+') as f:
-        #     for i, output_dict in enumerate(output_dicts):
-        #         output_dict_str = json.dumps(output_dict)
-        #         f.write(f'{output_dict_str}\n')
-
-
-        # del output_dicts, all_results, output_dict, eval_metric, logits, probs, label, predictions, references, outputs
 
     val_accuracy = 0
     val_loss = 0
