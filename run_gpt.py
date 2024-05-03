@@ -114,7 +114,7 @@ def parse_args():
         help="Gradient clipping norm.",
     )
     parser.add_argument("--weight_decay", type=float, default=0.0, help="Weight decay to use.")
-    parser.add_argument("--num_train_epochs", type=int, default=100, help="Total number of training epochs to perform.")
+    parser.add_argument("--num_train_epochs", type=int, default=10, help="Total number of training epochs to perform.")
     parser.add_argument(
         "--max_train_steps",
         type=int,
@@ -429,7 +429,6 @@ def main():
             output_dict = self.model(**kwargs)
 
             logits = output_dict['logits']
-            print("print logits in forward", logits)
             selected_logits = logits[:, -1, self.id_list]
             output_dict['logits'] = selected_logits
             return output_dict   
@@ -576,20 +575,6 @@ def main():
                 outputs = model(**batch)
                 predictions = outputs.logits.argmax(dim=-1) #if not is_regression else outputs.logits.squeeze()
 
-                logits = outputs.logits.detach()
-                for j in range(logits.size(0)):
-                    probs = logits[j]  #F.softmax(logits[j], -1)
-                    label = batch["labels"]
-                    output_dict = {
-                        'index': args.per_device_eval_batch_size * step + j,
-                        'true': label[j].item(),
-                        'pred': logits[j].argmax().item(),
-                        'conf': probs.max().item(),
-                        'logits': logits[j].cpu().numpy().tolist(),
-                        'probs': probs.cpu().numpy().tolist(),
-                    }
-                    output_dicts.append(output_dict)
-
                 predictions, references = accelerator.gather((predictions, batch["labels"]))
                 # If we are in a multiprocess environment, the last batch has duplicates
                 if accelerator.num_processes > 1:
@@ -604,30 +589,34 @@ def main():
                 )
 
                 eval_metric = metric.compute()
+
+                output_dict = {
+                    "epoch": epoch,
+                    "step": step,
+                    "loss": loss.data.item(),
+                    "accuracy": dict(eval_metric.items())
+                }
+
                 logger.info(f"epoch {epoch}: {eval_metric}")
 
                 all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
                 output_dir = os.path.join(args.output_dir, "step_0")
+                os.makedirs(output_dir, exist_ok=True)
                 all_results_output_path = os.path.join(output_dir, f"all_results.json")
 
 
+                loaded = []
                 if os.path.isfile(all_results_output_path):
-                    os.remove(all_results_output_path)
+                    with open(all_results_output_path, "r") as f:
+                        loaded = json.load(f)
+                    loaded.append(output_dict)
+                else:
+                    loaded.append(output_dict)
 
-                with open(all_results_output_path, "w") as f:
-                    json.dump(all_results, f)
+                # Open the file and dump the list
+                with open(all_results_output_path, 'w+') as f:
+                    json.dump(loaded, f)
 
-                output_path = os.path.join(output_dir, f'eval_res.json')
-                print(f'writing outputs to \'{output_path}\'')
-
-
-                if os.path.isfile(output_path):
-                    os.remove(output_path)
-
-                with open(output_path, 'w+') as f:
-                    for i, output_dict in enumerate(output_dicts):
-                        output_dict_str = json.dumps(output_dict)
-                        f.write(f'{output_dict_str}\n')
 
 
                 del output_dicts, all_results, output_dict, eval_metric, logits, probs, label, predictions, references, outputs

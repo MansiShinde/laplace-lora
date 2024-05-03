@@ -113,7 +113,7 @@ def parse_args():
         help="Initial learning rate (after the potential warmup period) to use.",
     )
     parser.add_argument("--weight_decay", type=float, default=0.0, help="Weight decay to use.")
-    parser.add_argument("--num_train_epochs", type=int, default=3, help="Total number of training epochs to perform.")
+    parser.add_argument("--num_train_epochs", type=int, default=10, help="Total number of training epochs to perform.")
     parser.add_argument(
         "--max_train_steps",
         type=int,
@@ -656,6 +656,7 @@ def main(load_step):
     output_dicts = []
     f_mu_list = []
     f_var_list = []
+    total_loss = 0
     for step, batch in tqdm(enumerate(eval_dataloader)):
         with torch.no_grad():
             f_mu, f_var = la._glm_predictive_distribution(batch)
@@ -668,6 +669,9 @@ def main(load_step):
 
         logits = f_mu + (torch.linalg.cholesky(f_var + torch.eye(f_var.shape[-1]).to(f_var.device)*1e-6).to(f_mu.dtype) @ torch.randn_like(f_mu).unsqueeze(-1).to(f_mu.dtype).to(accelerator.device)).squeeze(-1)
         logits = torch.softmax(logits, dim=-1).mean(0)
+
+        loss = torch.nn.CrossEntropyLoss()(logits.logits, batch['labels'])
+        total_loss += loss.data.item()
         
         predictions = logits.argmax(dim=-1)
 
@@ -721,18 +725,29 @@ def main(load_step):
 
     eval_metric = metric.compute()
 
+    output_dict = {
+        "epoch": load_step,
+        "step": step,
+        "total_loss": total_loss,
+        "accuracy": dict(eval_metric.items())
+    }
+
+
     all_results = {f"eval_{k}": v for k, v in eval_metric.items()}
 
     all_results_path = os.path.join(output_dir, f"all_results_la_{args.laplace_hessian}_{args.laplace_sub}_{args.laplace_prior}_{args.laplace_predict}_{args.laplace_optim_step}.json")
 
-    # delete the all_results file if it exists
+    loaded = []
     if os.path.isfile(all_results_path):
-        os.remove(all_results_path)
+        with open(all_results_path, "r") as f:
+            loaded = json.load(f)
+        loaded.append(output_dict)
+    else:
+        loaded.append(output_dict)
 
-    
-    # write to the all_results file
-    with open(all_results_path, "w") as f:
-        json.dump(all_results, f)
+    # Open the file and dump the list
+    with open(all_results_path, 'w+') as f:
+        json.dump(loaded, f)
 
     del model, train_dataloader, la, f_mu, f_var, f_mu_list, f_var_list, metric, eval_metric, output_dicts, eval_dataloader
     torch.cuda.empty_cache()

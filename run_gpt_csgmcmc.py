@@ -2,7 +2,6 @@ import os
 
 import argparse
 import json
-import jsonlines
 import logging
 import math
 import os
@@ -116,7 +115,7 @@ def parse_args():
         help="Gradient clipping norm.",
     )
     parser.add_argument("--weight_decay", type=float, default=0.0, help="Weight decay to use.")
-    parser.add_argument("--num_train_epochs", type=int, default=100, help="Total number of training epochs to perform.")
+    parser.add_argument("--num_train_epochs", type=int, default=10, help="Total number of training epochs to perform.")
     parser.add_argument(
         "--max_train_steps",
         type=int,
@@ -666,7 +665,7 @@ def main():
                 output_dict = {
                     "epoch": epoch,
                     "step": step,
-                    "total_loss": loss.data.item(),
+                    "loss": loss.data.item(),
                     "accuracy": dict(eval_metric.items())
                 }
 
