@@ -2,6 +2,7 @@ import os
 
 import argparse
 import json
+import jsonlines
 import logging
 import math
 import os
@@ -676,14 +677,18 @@ def main():
                 os.makedirs(output_dir, exist_ok=True)
                 all_results_output_path = os.path.join(output_dir, f"all_results.json")
 
+                
                 loaded = []
                 if os.path.isfile(all_results_output_path):
-                    with open(all_results_output_path,"r") as f:
+                    with open(all_results_output_path, "r") as f:
                         loaded = json.load(f)
                     loaded.append(output_dict)
                 else:
-                    with open(all_results_output_path, 'w+') as f:
-                        json.dump(output_dict, f)
+                    loaded.append(output_dict)
+
+                # Open the file and dump the list
+                with open(all_results_output_path, 'w+') as f:
+                    json.dump(loaded, f)
 
 
                 del all_results, output_dict, eval_metric, predictions, references, outputs
