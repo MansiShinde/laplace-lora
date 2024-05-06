@@ -4,13 +4,13 @@ I have made modifications to the code for experimental purpose.
 
 I ran all the scripts on google cab as follows:
 
-# fine tuning LLM using LoRA
+## fine tuning LLM using LoRA
 ```
 !python3 /content/laplace-lora/run_gpt.py --model_name_or_path="NousResearch/Llama-2-7b-hf" --max_train_steps=100
 ```
 
 
-# fine tuning LLM using Laplace-LoRA
+## fine tuning LLM using Laplace-LoRA
 ```
 !python3 /content/laplace-lora/run_gpt_laplace.py --model_name_or_path="NousResearch/Llama-2-7b-hf" --max_train_steps=100
 ```
@@ -19,7 +19,7 @@ I ran all the scripts on google cab as follows:
 I added one more script of training LoRA parameters using Cyclical Stochastic Gradient descent technique [ruqizhang/
 csgmcmc](https://github.com/ruqizhang/csgmcmc.git)
 
-# fine tuning LLM using CSG-MCMC loRA
+## fine tuning LLM using CSG-MCMC loRA
 ```
 !python3 /content/laplace-lora/run_gpt_csgmcmc.py --model_name_or_path="NousResearch/Llama-2-7b-hf"
 ```
